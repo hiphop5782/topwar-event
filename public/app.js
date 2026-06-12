@@ -79,7 +79,7 @@ elements.nameInput.value = localStorage.getItem("voteUserName") || "";
 elements.roleBadgeText.textContent = role === "admin" ? "관리자" : "사용자";
 
 function createId() {
-  if (globalThis.crypto?.randomUUID) {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
     return globalThis.crypto.randomUUID();
   }
   const randomPart = Array.from(globalThis.crypto?.getRandomValues?.(new Uint8Array(16)) || [])
