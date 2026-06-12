@@ -4,7 +4,7 @@ import {
   doc,
   getDoc,
   getDocs,
-  getFirestore,
+  initializeFirestore,
   onSnapshot,
   serverTimestamp,
   setDoc,
@@ -308,7 +308,10 @@ async function ensureFirebaseReady() {
   }
 
   const app = initializeApp(firebaseConfig);
-  db = getFirestore(app);
+  db = initializeFirestore(app, {
+    experimentalAutoDetectLongPolling: true,
+    useFetchStreams: false
+  });
   stateRef = doc(db, "events", eventId);
   usersRef = collection(db, "events", eventId, "users");
   firebaseReady = true;
