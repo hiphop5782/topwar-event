@@ -69,7 +69,7 @@ let db = null;
 let stateRef = null;
 let usersRef = null;
 let state = { ...defaultState, users: [] };
-let myId = localStorage.getItem("voteUserId") || crypto.randomUUID();
+let myId = localStorage.getItem("voteUserId") || createId();
 let myPicks = [];
 let forbiddenEditMode = false;
 let firebaseReady = false;
@@ -77,6 +77,16 @@ let firebaseReady = false;
 localStorage.setItem("voteUserId", myId);
 elements.nameInput.value = localStorage.getItem("voteUserName") || "";
 elements.roleBadgeText.textContent = role === "admin" ? "관리자" : "사용자";
+
+function createId() {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+  const randomPart = Array.from(globalThis.crypto?.getRandomValues?.(new Uint8Array(16)) || [])
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+  return `id-${Date.now().toString(36)}-${randomPart || Math.random().toString(36).slice(2)}`;
+}
 
 function isFirebaseConfigured() {
   return Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId);
@@ -446,7 +456,7 @@ async function draw(cell) {
       .filter((user) => (user.picks || []).includes(cell))
       .map((user) => ({ id: user.id, name: user.name }));
     const entry = {
-      id: crypto.randomUUID(),
+      id: createId(),
       cell,
       winners,
       drawnAt: new Date().toISOString()
@@ -472,7 +482,7 @@ async function resetAll() {
   const users = await getDocs(usersRef);
   const batch = writeBatch(db);
   users.docs.forEach((item) => batch.delete(item.ref));
-  batch.set(stateRef, { ...defaultState, resetId: crypto.randomUUID(), updatedAt: serverTimestamp() });
+  batch.set(stateRef, { ...defaultState, resetId: createId(), updatedAt: serverTimestamp() });
   await batch.commit();
 }
 
