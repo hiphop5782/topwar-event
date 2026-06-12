@@ -138,6 +138,7 @@ function winningUsers() {
 
 function renderBoard() {
   const counts = countByCell();
+  const usersByCell = usersGroupedByCell();
   const forbidden = new Set(state.forbiddenCells || []);
   const boardImageUrl = state.boardImageUrl || "map.png";
   elements.board.style.backgroundImage = `url("${boardImageUrl}")`;
@@ -147,14 +148,29 @@ function renderBoard() {
   document.querySelectorAll(".cell").forEach((cell) => {
     const index = Number(cell.dataset.cell);
     const count = counts.get(index) || 0;
+    const users = usersByCell.get(index) || [];
     const isForbidden = forbidden.has(index);
     cell.classList.toggle("selected", myPicks.includes(index));
     cell.classList.toggle("has-picks", count > 0);
     cell.classList.toggle("winner", state.winnerCell === index);
     cell.classList.toggle("forbidden", isForbidden);
     cell.dataset.count = count ? String(count) : "";
+    cell.dataset.names = users.length ? users.map((user) => user.name).join(", ") : "";
+    cell.setAttribute("aria-label", `${cellLabel(index)} 칸${users.length ? `, 선택자 ${users.map((user) => user.name).join(", ")}` : ""}`);
     cell.disabled = role === "user" && (state.phase !== "ready" || isForbidden);
   });
+}
+
+function usersGroupedByCell() {
+  const groups = new Map();
+  for (const user of state.users) {
+    for (const pick of user.picks || []) {
+      const users = groups.get(pick) || [];
+      users.push(user);
+      groups.set(pick, users);
+    }
+  }
+  return groups;
 }
 
 function renderUserPanel() {

@@ -236,15 +236,47 @@ body[data-role="admin"] .role-badge span {
 .cell.has-picks::after {
   content: attr(data-count);
   position: absolute;
-  right: 6px;
-  bottom: 5px;
-  min-width: 18px;
-  height: 18px;
+  inset: 50% auto auto 50%;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 7px;
   border-radius: 999px;
-  background: #1f2937;
+  background: rgba(17, 24, 39, 0.92);
   color: #fff;
-  font-size: 11px;
-  line-height: 18px;
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 34px;
+  text-align: center;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 2px #ffffff;
+  z-index: 2;
+}
+
+.cell.has-picks:not(.forbidden):hover::before,
+.cell.has-picks:not(.forbidden):focus-visible::before {
+  content: attr(data-names);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  width: max-content;
+  max-width: min(260px, 70vw);
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.35;
+  white-space: normal;
+  text-align: center;
+  transform: translateX(-50%);
+  z-index: 8;
+  box-shadow: 0 8px 24px rgba(17, 24, 39, 0.2);
+  pointer-events: none;
+}
+
+.cell.has-picks:not(.forbidden):hover {
+  z-index: 6;
 }
 
 .cell.winner {
@@ -280,8 +312,7 @@ body[data-role="admin"] .role-badge span {
 }
 
 .cell.forbidden::after {
-  background: #111827;
-  color: #ffffff;
+  content: none;
 }
 
 .board.has-image {
@@ -536,5 +567,12 @@ input {
     height: 24px;
     font-size: 16px;
     line-height: 20px;
+  }
+
+  .cell.has-picks::after {
+    min-width: 24px;
+    height: 24px;
+    font-size: 16px;
+    line-height: 24px;
   }
 }
