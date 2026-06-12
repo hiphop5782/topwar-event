@@ -70,16 +70,13 @@
             사용자당 선택 개수
             <input id="pickLimitInput" type="number" min="1" max="64" value="3" />
           </label>
-          <label>
-            보드 이미지 URL
-            <input id="boardImageInput" placeholder="map.png 또는 https://..." />
-          </label>
           <button id="applySettings" class="primary">설정 적용</button>
           <button id="forbiddenModeToggle" class="mode-toggle">선택 금지 칸 편집</button>
           <div class="button-grid">
             <button id="openVoting">선택 시작</button>
             <button id="lockVoting">선택 마감</button>
           </div>
+          <button id="resetPicksOnly">선택만 초기화</button>
           <button id="resetAll" class="danger">모든 내역 초기화</button>
           <p id="adminMessage" class="message">관리자는 보드 칸을 눌러 당첨 칸을 발표할 수 있습니다.</p>
         </aside>

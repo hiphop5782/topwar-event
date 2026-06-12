@@ -37,11 +37,11 @@ const elements = {
   submitPicks: document.querySelector("#submitPicks"),
   userMessage: document.querySelector("#userMessage"),
   pickLimitInput: document.querySelector("#pickLimitInput"),
-  boardImageInput: document.querySelector("#boardImageInput"),
   applySettings: document.querySelector("#applySettings"),
   forbiddenModeToggle: document.querySelector("#forbiddenModeToggle"),
   openVoting: document.querySelector("#openVoting"),
   lockVoting: document.querySelector("#lockVoting"),
+  resetPicksOnly: document.querySelector("#resetPicksOnly"),
   resetAll: document.querySelector("#resetAll"),
   adminMessage: document.querySelector("#adminMessage"),
   participantsList: document.querySelector("#participantsList"),
@@ -187,12 +187,10 @@ function renderAdminPanel() {
   if (document.activeElement !== elements.pickLimitInput) {
     elements.pickLimitInput.value = state.picksPerUser;
   }
-  if (document.activeElement !== elements.boardImageInput) {
-    elements.boardImageInput.value = state.boardImageUrl || "map.png";
-  }
   elements.applySettings.disabled = !firebaseReady;
   elements.openVoting.disabled = state.phase === "ready" || !firebaseReady;
   elements.lockVoting.disabled = state.phase !== "ready" || !firebaseReady;
+  elements.resetPicksOnly.disabled = !firebaseReady;
   elements.resetAll.disabled = !firebaseReady;
   elements.forbiddenModeToggle.disabled = !firebaseReady;
   elements.forbiddenModeToggle.classList.toggle("active", forbiddenEditMode);
@@ -425,12 +423,10 @@ async function trimUsersToCurrentRules(nextLimit = state.picksPerUser, forbidden
 
 async function updateSettings(phase = state.phase) {
   const picksPerUser = Math.max(1, Math.min(64, Number(elements.pickLimitInput.value) || 1));
-  const boardImageUrl = elements.boardImageInput.value.trim() || "map.png";
   await setDoc(
     stateRef,
     {
       picksPerUser,
-      boardImageUrl,
       phase,
       winnerCell: phase === "drawn" ? state.winnerCell : null,
       updatedAt: serverTimestamp()
@@ -502,6 +498,23 @@ async function resetAll() {
   await batch.commit();
 }
 
+async function resetPicksOnly() {
+  const users = await getDocs(usersRef);
+  const batch = writeBatch(db);
+  users.docs.forEach((item) => batch.delete(item.ref));
+  batch.set(
+    stateRef,
+    {
+      phase: "ready",
+      winnerCell: null,
+      resetId: createId(),
+      updatedAt: serverTimestamp()
+    },
+    { merge: true }
+  );
+  await batch.commit();
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -532,6 +545,13 @@ elements.forbiddenModeToggle.addEventListener("click", () => {
 });
 elements.openVoting.addEventListener("click", () => updateSettings("ready"));
 elements.lockVoting.addEventListener("click", () => updateSettings("locked"));
+elements.resetPicksOnly.addEventListener("click", async () => {
+  if (confirm("당첨 내역과 금지 칸은 유지하고 사용자 선택만 초기화할까요?")) {
+    myPicks = [];
+    forbiddenEditMode = false;
+    await resetPicksOnly();
+  }
+});
 elements.resetAll.addEventListener("click", async () => {
   if (confirm("참여자, 당첨 내역, 선택 금지 칸을 모두 초기화할까요?")) {
     myPicks = [];
