@@ -12,17 +12,129 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { eventId, firebaseConfig } from "./firebase-config.js";
 
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwXtgjDeK8fKh9z8FhnCglgyKU_5rJuxaC5vTAKklfOdLVd9_KOhYWuD4eCnop2vAPgfg/exec";
+
+const languages = [
+  { code: "ko", name: "한국어", flag: "🇰🇷" },
+  { code: "en", name: "English", flag: "🇺🇸" },
+  { code: "vi", name: "Tiếng Việt", flag: "🇻🇳" },
+  { code: "ja", name: "日本語", flag: "🇯🇵" },
+  { code: "es", name: "Español", flag: "🇪🇸" },
+  { code: "pt", name: "Português", flag: "🇵🇹" },
+  { code: "ar", name: "العربية", flag: "🇸🇦", dir: "rtl" },
+  { code: "zh-CN", name: "中文", flag: "🇨🇳" }
+];
+
+const koText = {
+  app: {
+    title: "기지 날아간 위치 맞추기",
+    eyebrow: "3223 서버 수도장 포상 이벤트",
+    languageLoading: "번역 중...",
+    languageError: "번역을 불러오지 못했습니다. 잠시 후 다시 시도해주세요."
+  },
+  role: {
+    user: "사용자",
+    admin: "관리자"
+  },
+  status: {
+    phase: "상태",
+    pickLimit: "선택 수",
+    participants: "참여자"
+  },
+  phase: {
+    ready: "선택 진행 중",
+    locked: "선택 마감",
+    drawn: "당첨 발표"
+  },
+  unit: {
+    cells: "개",
+    people: "명"
+  },
+  winner: {
+    cellLabel: "당첨 칸",
+    none: "당첨자가 없습니다.",
+    names: "당첨자: {names}",
+    noUsers: "해당 칸을 선택한 사용자가 없습니다."
+  },
+  board: {
+    aria: "8x8 선택 보드",
+    cell: "{cell} 칸",
+    selectedBy: "선택자: {names}"
+  },
+  user: {
+    title: "사용자 선택",
+    nameLabel: "이름",
+    namePlaceholder: "이름을 입력하세요",
+    mySelection: "내 선택",
+    submit: "선택 저장",
+    emptyPicks: "선택 없음",
+    limitReached: "{count}개까지만 선택할 수 있습니다.",
+    nameRequired: "이름을 입력해주세요.",
+    forbiddenPick: "선택 금지 칸은 고를 수 없습니다.",
+    exactPickRequired: "{count}개를 선택해주세요.",
+    saved: "선택이 저장되었습니다.",
+    cannotChangeNow: "지금은 선택을 변경할 수 없습니다."
+  },
+  admin: {
+    title: "관리자 설정",
+    pickLimitLabel: "사용자당 선택 개수",
+    apply: "설정 적용",
+    forbiddenEdit: "선택 금지 칸 편집",
+    forbiddenEditing: "선택 금지 편집 중",
+    openVoting: "선택 시작",
+    lockVoting: "선택 마감",
+    resetPicksOnly: "선택만 초기화",
+    resetAll: "모든 내역 초기화",
+    defaultMessage: "관리자는 보드 칸을 눌러 당첨 칸을 발표할 수 있습니다.",
+    settingsSaved: "설정이 모든 화면에 적용되었습니다.",
+    forbiddenSaved: "선택 금지 칸이 갱신되었습니다.",
+    forbiddenGuide: "보드에서 선택 금지로 만들 칸을 누르세요.",
+    invalidCell: "잘못된 칸입니다.",
+    cannotDrawForbidden: "선택 금지 칸은 당첨 칸으로 발표할 수 없습니다.",
+    drawConfirm: "선택을 마감하고 이 칸을 당첨 칸으로 발표할까요?",
+    resetPicksConfirm: "당첨 내역과 금지 칸은 유지하고 사용자 선택만 초기화할까요?",
+    resetAllConfirm: "참여자, 당첨 내역, 선택 금지 칸을 모두 초기화할까요?"
+  },
+  participants: {
+    title: "참여 현황",
+    none: "아직 참여자가 없습니다.",
+    noSelected: "아직 선택된 칸이 없습니다.",
+    summary: "가장 많이 선택된 칸 {cell} ({count}명), 선택 금지 {forbiddenCount}칸",
+    forbiddenOnly: "선택 금지 {forbiddenCount}칸"
+  },
+  history: {
+    title: "당첨 내역",
+    noneSummary: "아직 발표 기록이 없습니다.",
+    total: "총 {count}회 발표",
+    noWinner: "당첨자 없음",
+    empty: "관리자가 칸을 발표하면 여기에 기록됩니다.",
+    archive: "이전 당첨 내역 {count}개 보기"
+  },
+  firebase: {
+    configNeeded: "Firebase 설정이 필요합니다. public/firebase-config.js에 Firebase 프로젝트 설정값을 입력해주세요.",
+    connectionFailed: "Firebase 연결에 실패했습니다: {message}"
+  },
+  server: {
+    genericError: "서버에서 문제가 발생했습니다."
+  }
+};
+
+let translations = koText;
+let currentLanguage = localStorage.getItem("voteLanguage") || "ko";
+let translateLoading = false;
+
 const params = new URLSearchParams(window.location.search);
 let role = "user";
 
 if (params.has("admin")) {
-  role = window.prompt("관리자 비밀번호를 입력하세요.") === "3223" ? "admin" : "user";
+  role = window.prompt("관리자 비밀번호를 입력하세요") === "3223" ? "admin" : "user";
 }
 
 document.body.dataset.role = role;
 
 const elements = {
   board: document.querySelector("#board"),
+  languageSwitcher: document.querySelector("#languageSwitcher"),
   roleBadgeText: document.querySelector("#roleBadgeText"),
   phaseText: document.querySelector("#phaseText"),
   pickLimitText: document.querySelector("#pickLimitText"),
@@ -59,11 +171,6 @@ const defaultState = {
   forbiddenCells: [],
   resetId: "initial"
 };
-const phaseLabels = {
-  ready: "선택 진행 중",
-  locked: "선택 마감",
-  drawn: "당첨 발표"
-};
 
 let db = null;
 let stateRef = null;
@@ -76,7 +183,117 @@ let firebaseReady = false;
 
 localStorage.setItem("voteUserId", myId);
 elements.nameInput.value = localStorage.getItem("voteUserName") || "";
-elements.roleBadgeText.textContent = role === "admin" ? "관리자" : "사용자";
+
+function deepMerge(base, patch) {
+  if (!patch || typeof patch !== "object") return base;
+  const output = Array.isArray(base) ? [...base] : { ...base };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      output[key] = deepMerge(base?.[key] || {}, value);
+    } else if (typeof value === "string") {
+      output[key] = value;
+    }
+  }
+  return output;
+}
+
+function getTextValue(path, source = translations) {
+  return path.split(".").reduce((value, key) => value?.[key], source);
+}
+
+function t(path, vars = {}) {
+  const value = getTextValue(path) ?? getTextValue(path, koText) ?? path;
+  return String(value).replaceAll(/\{(\w+)\}/g, (_, key) => vars[key] ?? "");
+}
+
+function applyStaticText() {
+  document.documentElement.lang = currentLanguage;
+  const language = languages.find((item) => item.code === currentLanguage) || languages[0];
+  document.documentElement.dir = language.dir || "ltr";
+  document.querySelectorAll("[data-i18n]").forEach((node) => {
+    node.textContent = t(node.dataset.i18n);
+  });
+  elements.nameInput.placeholder = t("user.namePlaceholder");
+  elements.board.setAttribute("aria-label", t("board.aria"));
+  elements.roleBadgeText.textContent = t(role === "admin" ? "role.admin" : "role.user");
+}
+
+function renderLanguageSwitcher() {
+  elements.languageSwitcher.innerHTML = languages
+    .map(
+      (language) => `
+        <button
+          type="button"
+          class="language-button ${language.code === currentLanguage ? "active" : ""}"
+          data-language="${language.code}"
+          aria-label="${language.name}"
+          title="${language.name}"
+        >
+          <span aria-hidden="true">${language.flag}</span>
+          <span class="language-name">${language.name}</span>
+        </button>
+      `
+    )
+    .join("");
+
+  elements.languageSwitcher.querySelectorAll("[data-language]").forEach((button) => {
+    button.addEventListener("click", () => changeLanguage(button.dataset.language));
+  });
+}
+
+async function changeLanguage(code) {
+  if (translateLoading || code === currentLanguage) return;
+  const language = languages.find((item) => item.code === code);
+  if (!language) return;
+
+  currentLanguage = code;
+  localStorage.setItem("voteLanguage", code);
+  renderLanguageSwitcher();
+
+  if (code === "ko") {
+    translations = koText;
+    applyStaticText();
+    render();
+    return;
+  }
+
+  translateLoading = true;
+  setTransientMessage(t("app.languageLoading"));
+
+  try {
+    const response = await fetch(SCRIPT_URL, {
+      method: "POST",
+      body: JSON.stringify({
+        action: "translate_all",
+        target: language.code,
+        data: koText
+      })
+    });
+    const result = await response.json();
+
+    if (result.error) throw new Error(result.error);
+    translations = deepMerge(koText, result);
+    applyStaticText();
+    render();
+  } catch (error) {
+    console.error("번역 오류:", error);
+    translations = koText;
+    currentLanguage = "ko";
+    localStorage.setItem("voteLanguage", "ko");
+    renderLanguageSwitcher();
+    applyStaticText();
+    render();
+    setTransientMessage(t("app.languageError"), true);
+  } finally {
+    translateLoading = false;
+  }
+}
+
+function setTransientMessage(message, isError = false) {
+  const target = role === "admin" ? elements.adminMessage : elements.userMessage;
+  target.textContent = message;
+  target.classList.toggle("error", isError);
+}
 
 function createId() {
   if (typeof globalThis.crypto?.randomUUID === "function") {
@@ -117,7 +334,6 @@ function buildBoard() {
     button.className = "cell";
     button.type = "button";
     button.dataset.cell = String(index);
-    button.setAttribute("aria-label", `${cellLabel(index)} 칸`);
     button.addEventListener("click", () => handleCellClick(index));
     elements.board.append(button);
   }
@@ -136,6 +352,18 @@ function winningUsers() {
   return state.users.filter((user) => (user.picks || []).includes(state.winnerCell));
 }
 
+function usersGroupedByCell() {
+  const groups = new Map();
+  for (const user of state.users) {
+    for (const pick of user.picks || []) {
+      const users = groups.get(pick) || [];
+      users.push(user);
+      groups.set(pick, users);
+    }
+  }
+  return groups;
+}
+
 function renderBoard() {
   const counts = countByCell();
   const usersByCell = usersGroupedByCell();
@@ -149,28 +377,18 @@ function renderBoard() {
     const index = Number(cell.dataset.cell);
     const count = counts.get(index) || 0;
     const users = usersByCell.get(index) || [];
+    const names = users.map((user) => user.name).join(", ");
     const isForbidden = forbidden.has(index);
     cell.classList.toggle("selected", myPicks.includes(index));
     cell.classList.toggle("has-picks", count > 0);
     cell.classList.toggle("winner", state.winnerCell === index);
     cell.classList.toggle("forbidden", isForbidden);
     cell.dataset.count = count ? String(count) : "";
-    cell.dataset.names = users.length ? users.map((user) => user.name).join(", ") : "";
-    cell.setAttribute("aria-label", `${cellLabel(index)} 칸${users.length ? `, 선택자 ${users.map((user) => user.name).join(", ")}` : ""}`);
+    cell.dataset.names = names;
+    const suffix = users.length ? `, ${t("board.selectedBy", { names })}` : "";
+    cell.setAttribute("aria-label", `${t("board.cell", { cell: cellLabel(index) })}${suffix}`);
     cell.disabled = role === "user" && (state.phase !== "ready" || isForbidden);
   });
-}
-
-function usersGroupedByCell() {
-  const groups = new Map();
-  for (const user of state.users) {
-    for (const pick of user.picks || []) {
-      const users = groups.get(pick) || [];
-      users.push(user);
-      groups.set(pick, users);
-    }
-  }
-  return groups;
 }
 
 function renderUserPanel() {
@@ -179,7 +397,7 @@ function renderUserPanel() {
   elements.myPickCount.textContent = myPicks.length;
   elements.myPicks.innerHTML = myPicks.length
     ? myPicks.map((pick) => `<span class="chip">${cellLabel(pick)}</span>`).join("")
-    : `<span class="chip">선택 없음</span>`;
+    : `<span class="chip">${t("user.emptyPicks")}</span>`;
   elements.submitPicks.disabled = state.phase !== "ready" || !firebaseReady;
 }
 
@@ -194,7 +412,7 @@ function renderAdminPanel() {
   elements.resetAll.disabled = !firebaseReady;
   elements.forbiddenModeToggle.disabled = !firebaseReady;
   elements.forbiddenModeToggle.classList.toggle("active", forbiddenEditMode);
-  elements.forbiddenModeToggle.textContent = forbiddenEditMode ? "선택 금지 편집 중" : "선택 금지 칸 편집";
+  elements.forbiddenModeToggle.textContent = forbiddenEditMode ? t("admin.forbiddenEditing") : t("admin.forbiddenEdit");
 }
 
 function renderParticipants() {
@@ -213,13 +431,13 @@ function renderParticipants() {
           `
         )
         .join("")
-    : `<p class="message">아직 참여자가 없습니다.</p>`;
+    : `<p class="message">${t("participants.none")}</p>`;
 
   const counts = [...countByCell().entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]);
   const forbiddenCount = state.forbiddenCells?.length || 0;
   elements.selectedCellsSummary.textContent = counts.length
-    ? `가장 많이 선택된 칸: ${cellLabel(counts[0][0])} (${counts[0][1]}명), 선택 금지 ${forbiddenCount}칸`
-    : `선택 금지 ${forbiddenCount}칸`;
+    ? t("participants.summary", { cell: cellLabel(counts[0][0]), count: counts[0][1], forbiddenCount })
+    : t("participants.forbiddenOnly", { forbiddenCount });
 }
 
 function renderWinner() {
@@ -230,20 +448,18 @@ function renderWinner() {
 
   elements.winnerCellText.textContent = cellLabel(state.winnerCell);
   elements.winnerNamesText.textContent = winners.length
-    ? `당첨자: ${winners.map((user) => user.name).join(", ")}`
-    : "해당 칸을 선택한 사용자가 없습니다.";
+    ? t("winner.names", { names: winners.map((user) => user.name).join(", ") })
+    : t("winner.noUsers");
 }
 
 function historyCard(entry, isLatest = false) {
-  const time = new Date(entry.drawnAt).toLocaleString("ko-KR", {
+  const time = new Date(entry.drawnAt).toLocaleString(currentLanguage === "ko" ? "ko-KR" : currentLanguage, {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit"
   });
-  const winnerNames = entry.winners?.length
-    ? entry.winners.map((winner) => winner.name).join(", ")
-    : "당첨자 없음";
+  const winnerNames = entry.winners?.length ? entry.winners.map((winner) => winner.name).join(", ") : t("history.noWinner");
 
   return `
     <article class="history-item ${isLatest ? "latest" : ""}">
@@ -257,11 +473,11 @@ function historyCard(entry, isLatest = false) {
 function renderHistory() {
   const [latest, ...older] = state.drawHistory;
   elements.historySummary.textContent = state.drawHistory.length
-    ? `총 ${state.drawHistory.length}회 발표`
-    : "아직 발표 기록이 없습니다.";
+    ? t("history.total", { count: state.drawHistory.length })
+    : t("history.noneSummary");
 
   if (!latest) {
-    elements.historyList.innerHTML = `<p class="message">관리자가 칸을 발표하면 여기에 기록됩니다.</p>`;
+    elements.historyList.innerHTML = `<p class="message">${t("history.empty")}</p>`;
     return;
   }
 
@@ -273,7 +489,7 @@ function renderHistory() {
       older.length
         ? `
           <details class="history-archive">
-            <summary>이전 당첨 내역 ${older.length}개 보기</summary>
+            <summary>${t("history.archive", { count: older.length })}</summary>
             <div class="history-list archive-list">
               ${older.map((entry) => historyCard(entry)).join("")}
             </div>
@@ -285,7 +501,8 @@ function renderHistory() {
 }
 
 function render() {
-  elements.phaseText.textContent = phaseLabels[state.phase] || "준비 중";
+  applyStaticText();
+  elements.phaseText.textContent = t(`phase.${state.phase}`) || t("phase.ready");
   renderBoard();
   renderUserPanel();
   renderAdminPanel();
@@ -314,7 +531,7 @@ function handleCellClick(index) {
   } else if (myPicks.length < state.picksPerUser) {
     myPicks = [...myPicks, index];
   } else {
-    elements.userMessage.textContent = `${state.picksPerUser}개까지만 선택할 수 있습니다.`;
+    elements.userMessage.textContent = t("user.limitReached", { count: state.picksPerUser });
     elements.userMessage.classList.add("error");
   }
   render();
@@ -322,7 +539,7 @@ function handleCellClick(index) {
 
 async function ensureFirebaseReady() {
   if (!isFirebaseConfigured()) {
-    const message = "Firebase 설정이 필요합니다. public/firebase-config.js에 Firebase 웹 앱 설정값을 입력해 주세요.";
+    const message = t("firebase.configNeeded");
     elements.userMessage.textContent = message;
     elements.userMessage.classList.add("error");
     elements.adminMessage.textContent = message;
@@ -386,9 +603,9 @@ async function savePicks() {
   try {
     const name = elements.nameInput.value.trim();
     const forbidden = new Set(state.forbiddenCells || []);
-    if (!name) throw new Error("이름을 입력해 주세요.");
-    if (myPicks.some((pick) => forbidden.has(pick))) throw new Error("선택 금지 칸은 고를 수 없습니다.");
-    if (myPicks.length !== state.picksPerUser) throw new Error(`${state.picksPerUser}개를 선택해 주세요.`);
+    if (!name) throw new Error(t("user.nameRequired"));
+    if (myPicks.some((pick) => forbidden.has(pick))) throw new Error(t("user.forbiddenPick"));
+    if (myPicks.length !== state.picksPerUser) throw new Error(t("user.exactPickRequired", { count: state.picksPerUser }));
 
     localStorage.setItem("voteUserName", name);
     await setDoc(doc(usersRef, myId), {
@@ -397,7 +614,7 @@ async function savePicks() {
       picks: myPicks,
       updatedAt: serverTimestamp()
     });
-    elements.userMessage.textContent = "선택이 저장되었습니다.";
+    elements.userMessage.textContent = t("user.saved");
     elements.userMessage.classList.remove("error");
   } catch (error) {
     elements.userMessage.textContent = error.message;
@@ -434,7 +651,7 @@ async function updateSettings(phase = state.phase) {
     { merge: true }
   );
   await trimUsersToCurrentRules(picksPerUser, state.forbiddenCells);
-  elements.adminMessage.textContent = "설정이 모든 화면에 적용되었습니다.";
+  elements.adminMessage.textContent = t("admin.settingsSaved");
   elements.adminMessage.classList.remove("error");
 }
 
@@ -447,7 +664,7 @@ async function toggleForbiddenCell(cell) {
 
     await setDoc(stateRef, { forbiddenCells, updatedAt: serverTimestamp() }, { merge: true });
     await trimUsersToCurrentRules(state.picksPerUser, forbiddenCells);
-    elements.adminMessage.textContent = "선택 금지 칸이 갱신되었습니다.";
+    elements.adminMessage.textContent = t("admin.forbiddenSaved");
     elements.adminMessage.classList.remove("error");
   } catch (error) {
     elements.adminMessage.textContent = error.message;
@@ -458,9 +675,9 @@ async function toggleForbiddenCell(cell) {
 async function draw(cell) {
   try {
     if ((state.forbiddenCells || []).includes(cell)) {
-      throw new Error("선택 금지 칸은 당첨 칸으로 발표할 수 없습니다.");
+      throw new Error(t("admin.cannotDrawForbidden"));
     }
-    if (state.phase === "ready" && !confirm("선택을 마감하고 이 칸을 당첨 칸으로 발표할까요?")) {
+    if (state.phase === "ready" && !confirm(t("admin.drawConfirm"))) {
       return;
     }
 
@@ -538,32 +755,36 @@ elements.applySettings.addEventListener("click", async () => {
 });
 elements.forbiddenModeToggle.addEventListener("click", () => {
   forbiddenEditMode = !forbiddenEditMode;
-  elements.adminMessage.textContent = forbiddenEditMode
-    ? "보드에서 선택 금지로 만들 칸을 누르세요."
-    : "관리자는 보드 칸을 눌러 당첨 칸을 발표할 수 있습니다.";
+  elements.adminMessage.textContent = forbiddenEditMode ? t("admin.forbiddenGuide") : t("admin.defaultMessage");
   render();
 });
 elements.openVoting.addEventListener("click", () => updateSettings("ready"));
 elements.lockVoting.addEventListener("click", () => updateSettings("locked"));
 elements.resetPicksOnly.addEventListener("click", async () => {
-  if (confirm("당첨 내역과 금지 칸은 유지하고 사용자 선택만 초기화할까요?")) {
+  if (confirm(t("admin.resetPicksConfirm"))) {
     myPicks = [];
     forbiddenEditMode = false;
     await resetPicksOnly();
   }
 });
 elements.resetAll.addEventListener("click", async () => {
-  if (confirm("참여자, 당첨 내역, 선택 금지 칸을 모두 초기화할까요?")) {
+  if (confirm(t("admin.resetAllConfirm"))) {
     myPicks = [];
     forbiddenEditMode = false;
     await resetAll();
   }
 });
 
+renderLanguageSwitcher();
 buildBoard();
 render();
+if (currentLanguage !== "ko") {
+  const savedLanguage = currentLanguage;
+  currentLanguage = "ko";
+  changeLanguage(savedLanguage);
+}
 ensureFirebaseReady().catch((error) => {
-  const message = `Firebase 연결에 실패했습니다: ${error.message}`;
+  const message = t("firebase.connectionFailed", { message: error.message });
   elements.userMessage.textContent = message;
   elements.userMessage.classList.add("error");
   elements.adminMessage.textContent = message;
