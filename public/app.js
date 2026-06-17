@@ -12,21 +12,35 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { eventId, firebaseConfig } from "./firebase-config.js";
 
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwXtgjDeK8fKh9z8FhnCglgyKU_5rJuxaC5vTAKklfOdLVd9_KOhYWuD4eCnop2vAPgfg/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxPImoRLB4zbQgzixoCts_q5_8zQva4QcyvBEXuSeIpl8FRjs8lneLJgXJEuiZEm7Bs/exec";
 const LANGUAGES = [
-  { code: "ko", label: "Korean", flag: "\u{1F1F0}\u{1F1F7}" },
-  { code: "en", label: "English", flag: "\u{1F1FA}\u{1F1F8}" },
-  { code: "vi", label: "Vietnamese", flag: "\u{1F1FB}\u{1F1F3}" },
-  { code: "ja", label: "Japanese", flag: "\u{1F1EF}\u{1F1F5}" },
-  { code: "es", label: "Spanish", flag: "\u{1F1EA}\u{1F1F8}" },
-  { code: "pt", label: "Portuguese", flag: "\u{1F1F5}\u{1F1F9}" },
-  { code: "ar", label: "Arabic", flag: "\u{1F1F8}\u{1F1E6}", dir: "rtl" },
-  { code: "zh-CN", label: "Chinese", flag: "\u{1F1E8}\u{1F1F3}" }
+  { code: "ko", label: "Korean", flag: "kr" },
+  { code: "en", label: "English", flag: "us" },
+  { code: "vi", label: "Vietnamese", flag: "vn" },
+  { code: "ja", label: "Japanese", flag: "jp" },
+  { code: "es", label: "Spanish", flag: "es" },
+  { code: "pt", label: "Portuguese", flag: "pt" },
+  { code: "ar", label: "Arabic", flag: "sa", dir: "rtl" },
+  { code: "zh-CN", label: "Chinese", flag: "cn" }
 ];
 
 let currentLanguage = "ko";
 let translateLoading = false;
 let koreanRestoreMap = new Map();
+const TRANSLATE_SKIP_SELECTOR = [
+  "[data-no-translate]",
+  "script",
+  "style",
+  ".cell",
+  ".participant strong",
+  ".participant .chip",
+  ".history-item strong",
+  "#pickLimitText",
+  "#participantCount",
+  "#winnerCellText",
+  "#myPickCount",
+  "#myPickLimit"
+].join(", ");
 
 const params = new URLSearchParams(window.location.search);
 let role = "user";
@@ -100,7 +114,7 @@ function renderLanguageSwitcher() {
   if (!elements.languageSwitcher) return;
   elements.languageSwitcher.innerHTML = LANGUAGES
     .map((language) =>
-      "<button type=\"button\" class=\"language-button " + (language.code === currentLanguage ? "active" : "") + "\" data-language=\"" + language.code + "\" aria-label=\"" + language.label + "\" title=\"" + language.label + "\"><span class=\"flag-icon\" aria-hidden=\"true\">" + language.flag + "</span></button>"
+      "<button type=\"button\" class=\"language-button " + (language.code === currentLanguage ? "active" : "") + "\" data-language=\"" + language.code + "\" aria-label=\"" + language.label + "\" title=\"" + language.label + "\"><img class=\"flag-icon\" src=\"https://flagcdn.com/w40/" + language.flag + ".png\" srcset=\"https://flagcdn.com/w80/" + language.flag + ".png 2x\" width=\"40\" height=\"30\" alt=\"\" loading=\"lazy\" /></button>"
     )
     .join("");
 }
@@ -108,10 +122,18 @@ function renderLanguageSwitcher() {
 function shouldSkipTranslateNode(node) {
   const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
   if (!element) return true;
-  if (element.closest("[data-no-translate], script, style, .cell")) return true;
+  if (element.closest(TRANSLATE_SKIP_SELECTOR)) return true;
   const box = element.nodeType === Node.ELEMENT_NODE ? element.getBoundingClientRect() : null;
   const style = window.getComputedStyle(element);
   return style.display === "none" || style.visibility === "hidden" || (box && box.width === 0 && box.height === 0);
+}
+
+function isMeaningfulTranslateText(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (/^[\d\s/.,:()-]+$/.test(text)) return false;
+  if (/^\d+-\d+$/.test(text)) return false;
+  return /[가-힣]/.test(text);
 }
 
 function rememberKoreanValue(id, value) {
@@ -139,7 +161,7 @@ function collectTranslationPayload() {
   const walker = document.createTreeWalker(document.querySelector(".app"), NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       if (shouldSkipTranslateNode(node)) return NodeFilter.FILTER_REJECT;
-      return node.nodeValue.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      return isMeaningfulTranslateText(node.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
     }
   });
   while (walker.nextNode()) {
@@ -153,7 +175,7 @@ function collectTranslationPayload() {
   document.querySelectorAll(".app input[placeholder]").forEach((input) => {
     if (shouldSkipTranslateNode(input)) return;
     const value = input.getAttribute("placeholder");
-    if (!value || !value.trim()) return;
+    if (!isMeaningfulTranslateText(value)) return;
     const key = "p" + index++;
     const id = "placeholder:" + getElementPath(input);
     payload[key] = value.trim();
@@ -161,6 +183,20 @@ function collectTranslationPayload() {
     rememberKoreanValue(id, { type: "placeholder", node: input, value });
   });
   return { payload, targets };
+}
+
+function normalizeTranslationResult(result) {
+  if (result?.data && typeof result.data === "object") return result.data;
+  if (result?.result && typeof result.result === "object") return result.result;
+  if (result?.translated && typeof result.translated === "object") return result.translated;
+  return result;
+}
+
+function didTranslateChange(result, payload) {
+  return Object.entries(payload).some(([key, value]) => {
+    const translated = result?.[key];
+    return typeof translated === "string" && translated.trim() && translated.trim() !== String(value).trim();
+  });
 }
 
 function setTranslatePlaceholder(targets, enabled) {
@@ -225,8 +261,12 @@ async function changeLanguage(code) {
       method: "POST",
       body: JSON.stringify({ action: "translate_all", target: code, data: payload })
     });
-    const result = await response.json();
-    if (result.error) throw new Error(result.error);
+    const rawResult = await response.json();
+    if (rawResult.error) throw new Error(rawResult.error);
+    const result = normalizeTranslationResult(rawResult);
+    if (!didTranslateChange(result, payload)) {
+      throw new Error("Translation server returned the original text unchanged.");
+    }
     applyTranslatedPayload(result, targets);
   } catch (error) {
     console.error("Translation failed:", error);

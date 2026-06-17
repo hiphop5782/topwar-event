@@ -608,9 +608,12 @@ input {
 
 .language-button .flag-icon {
   display: block;
-  font-size: 24px;
+  width: 28px;
+  height: 21px;
+  border-radius: 4px;
+  object-fit: cover;
   filter: saturate(1.08);
-  transform: translateY(-1px);
+  box-shadow: 0 0 0 1px rgba(17, 24, 39, 0.08);
 }
 
 .language-button.active {
