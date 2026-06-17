@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>기지 날아간 위치 맞추기</title>
+    <title data-i18n-title="app.title">기지 날아간 위치 맞추기</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -15,7 +15,7 @@
           <h1 data-i18n="app.title">기지 날아간 위치 맞추기</h1>
         </div>
         <div class="header-actions">
-          <nav id="languageSwitcher" class="language-switcher" aria-label="언어 선택"></nav>
+          <nav id="languageSwitcher" class="language-switcher" aria-label="언어 선택" data-no-translate></nav>
           <div class="role-badge" aria-label="현재 화면 모드">
             <span id="roleBadgeText">사용자</span>
           </div>
@@ -100,8 +100,9 @@
         </div>
         <div id="historyList"></div>
       </section>
+          <div id="toastRoot" class="toast-root" aria-live="assertive" aria-atomic="true"></div>
     </main>
 
-    <script src="./app.js?v=20260617-i18n" type="module"></script>
+    <script src="./app.js?v=20260617-i18n-4" type="module"></script>
   </body>
 </html>
