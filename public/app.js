@@ -23,7 +23,18 @@ const LANGUAGES = [
   { code: "ar", label: "Arabic", flag: "sa", dir: "rtl" },
   { code: "zh-CN", label: "Chinese", flag: "cn" }
 ];
-const TRANSLATE_SKIP_SELECTOR = ["[data-no-translate]", "script", "style", ".cell"].join(", ");
+const TRANSLATE_SKIP_SELECTOR = [
+  "[data-no-translate]",
+  "script",
+  "style",
+  ".cell",
+  ".participant strong",
+  ".participant .chip",
+  ".winner-roster-list strong",
+  ".winner-list strong",
+  ".winner-name-list",
+  ".celebration-card em"
+].join(", ");
 
 const params = new URLSearchParams(window.location.search);
 let role = "user";
@@ -220,7 +231,19 @@ function setTranslatePlaceholder(targets, enabled) {
   for (const target of targets) {
     const element = target.type === "text" ? target.node.parentElement : target.node;
     if (element) element.classList.toggle("translate-placeholder", enabled);
+    if (!enabled) continue;
+    if (target.type === "text") {
+      target.node.nodeValue = target.original.replace(target.original.trim(), placeholderText(target.original.trim()));
+    }
+    if (target.type === "placeholder") {
+      target.node.setAttribute("placeholder", "············");
+    }
   }
+}
+
+function placeholderText(text) {
+  const length = Math.max(4, Math.min(18, text.length));
+  return "█".repeat(length);
 }
 
 function applyTranslatedPayload(result, targets) {
@@ -443,9 +466,9 @@ function renderParticipants() {
         .map(
           (user) => `
             <article class="participant ${winners.has(user.id) ? "winner" : ""}">
-              <strong>${escapeHtml(user.name)}</strong>
+              <strong data-no-translate>${escapeHtml(user.name)}</strong>
               <div class="chips">
-                ${(user.picks || []).map((pick) => `<span class="chip">${cellLabel(pick)}</span>`).join("")}
+                ${(user.picks || []).map((pick) => `<span class="chip" data-no-translate>${cellLabel(pick)}</span>`).join("")}
               </div>
             </article>
           `
@@ -468,8 +491,8 @@ function renderWinner() {
 
   elements.winnerCellText.textContent = cellLabel(state.winnerCell);
   const winnerNames = winners.map((user) => user.name).filter(Boolean);
-  elements.winnerNamesText.textContent = winnerNames.length
-    ? `당첨자: ${winnerNames.join(", ")}`
+  elements.winnerNamesText.innerHTML = winnerNames.length
+    ? `당첨자: <span class="winner-name-list" data-no-translate>${escapeHtml(winnerNames.join(", "))}</span>`
     : "해당 칸을 선택한 사용자가 없습니다.";
 }
 
@@ -494,7 +517,7 @@ function renderWinnerRoster() {
         .map(
           (row) => `
             <li>
-              <strong>${escapeHtml(row.name)}</strong>
+              <strong data-no-translate>${escapeHtml(row.name)}</strong>
               <small>${cellLabel(row.cell)} / ${row.time}</small>
             </li>
           `
@@ -549,7 +572,7 @@ function renderWinnerList(winners) {
         .map(
           (winner) => `
             <li>
-              <strong>${escapeHtml(winner.name)}</strong>
+              <strong data-no-translate>${escapeHtml(winner.name)}</strong>
             </li>
           `
         )
