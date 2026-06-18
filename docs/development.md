@@ -81,7 +81,7 @@ GitHub Pages에는 `public` 폴더의 정적 파일이 올라가면 됩니다.
 
 ```html
 <link rel="stylesheet" href="./styles.css?v=20260618-6" />
-<script src="./app.js?v=20260618-6" type="module"></script>
+<script src="./app.js?v=20260618-7" type="module"></script>
 ```
 
 `app.js` 또는 `styles.css`를 수정한 뒤 배포한다면 이 버전 숫자를 올리는 편이 안전합니다.
@@ -101,6 +101,7 @@ window.prompt("관리자 비밀번호를 입력하세요.") === "3223"
 - `normalizeState`: Firestore에서 받은 상태값 보정
 - `render`: 전체 화면 렌더링
 - `renderBoard`: 8x8 보드 렌더링
+- `renderLanguageSwitcher`: 국기 언어 버튼 렌더링
 - `renderAdminPanel`: 관리자 패널 상태 반영
 - `renderWinner`: 현재 당첨 결과 표시
 - `renderWinnerRoster`: 누적 당첨 인원 표시
@@ -113,6 +114,26 @@ window.prompt("관리자 비밀번호를 입력하세요.") === "3223"
 - `resetPicksOnly`: 참여자 선택만 초기화
 - `resetWinnerHistoryOnly`: 당첨 내역만 초기화
 - `resetAll`: 전체 초기화
+- `changeLanguage`: 화면 텍스트를 수집해 번역 API로 전송
+
+## 번역 API
+
+번역 API 주소는 `public/app.js`의 `SCRIPT_URL`에 있습니다.
+
+요청 형식:
+
+```json
+{
+  "action": "translate_all",
+  "target": "en",
+  "data": {
+    "t0": "번역할 텍스트",
+    "p1": "이름을 입력하세요"
+  }
+}
+```
+
+응답은 같은 키를 가진 객체를 기대합니다.
 
 ## 검증 명령
 

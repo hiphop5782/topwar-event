@@ -12,6 +12,19 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { eventId, firebaseConfig } from "./firebase-config.js";
 
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxPImoRLB4zbQgzixoCts_q5_8zQva4QcyvBEXuSeIpl8FRjs8lneLJgXJEuiZEm7Bs/exec";
+const LANGUAGES = [
+  { code: "ko", label: "Korean", flag: "kr" },
+  { code: "en", label: "English", flag: "us" },
+  { code: "vi", label: "Vietnamese", flag: "vn" },
+  { code: "ja", label: "Japanese", flag: "jp" },
+  { code: "es", label: "Spanish", flag: "es" },
+  { code: "pt", label: "Portuguese", flag: "pt" },
+  { code: "ar", label: "Arabic", flag: "sa", dir: "rtl" },
+  { code: "zh-CN", label: "Chinese", flag: "cn" }
+];
+const TRANSLATE_SKIP_SELECTOR = ["[data-no-translate]", "script", "style", ".cell"].join(", ");
+
 const params = new URLSearchParams(window.location.search);
 let role = "user";
 
@@ -23,6 +36,8 @@ document.body.dataset.role = role;
 
 const elements = {
   board: document.querySelector("#board"),
+  languageSwitcher: document.querySelector("#languageSwitcher"),
+  toastRoot: document.querySelector("#toastRoot"),
   roleBadgeText: document.querySelector("#roleBadgeText"),
   phaseText: document.querySelector("#phaseText"),
   pickLimitText: document.querySelector("#pickLimitText"),
@@ -84,10 +99,210 @@ let firebaseReady = false;
 let hasReceivedState = false;
 let lastCelebratedWinnerKey = null;
 let celebrationTimer = null;
+let currentLanguage = "ko";
+let translateLoading = false;
+let koreanRestoreMap = new Map();
 
 localStorage.setItem("voteUserId", myId);
 elements.nameInput.value = localStorage.getItem("voteUserName") || "";
 elements.roleBadgeText.textContent = role === "admin" ? "관리자" : "사용자";
+
+function renderLanguageSwitcher() {
+  if (!elements.languageSwitcher) return;
+  elements.languageSwitcher.innerHTML = LANGUAGES.map(
+    (language) => `
+      <button
+        type="button"
+        class="language-button ${language.code === currentLanguage ? "active" : ""}"
+        data-language="${language.code}"
+        aria-label="${language.label}"
+        title="${language.label}"
+      >
+        <img
+          class="flag-icon"
+          src="https://flagcdn.com/w40/${language.flag}.png"
+          srcset="https://flagcdn.com/w80/${language.flag}.png 2x"
+          width="40"
+          height="30"
+          alt=""
+          loading="lazy"
+        />
+      </button>
+    `
+  ).join("");
+}
+
+function shouldSkipTranslateNode(node) {
+  const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+  if (!element || element.closest(TRANSLATE_SKIP_SELECTOR)) return true;
+  const style = window.getComputedStyle(element);
+  if (style.display === "none" || style.visibility === "hidden") return true;
+  const box = element.getBoundingClientRect();
+  return box.width === 0 && box.height === 0;
+}
+
+function isMeaningfulTranslateText(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (/^[\d\s/.,:()\-]+$/.test(text)) return false;
+  if (/^\d+-\d+$/.test(text)) return false;
+  return /[가-힣]/.test(text);
+}
+
+function rememberKoreanValue(id, value) {
+  if (!koreanRestoreMap.has(id)) koreanRestoreMap.set(id, value);
+}
+
+function getElementPath(element) {
+  if (element.id) return `#${element.id}`;
+  const parts = [];
+  let current = element;
+  while (current && current !== document.body) {
+    const parent = current.parentElement;
+    if (!parent) break;
+    const index = [...parent.children].indexOf(current) + 1;
+    parts.unshift(`${current.tagName.toLowerCase()}:nth-child(${index})`);
+    current = parent;
+  }
+  return parts.join(" > ");
+}
+
+function collectTranslationPayload() {
+  const payload = {};
+  const targets = [];
+  let index = 0;
+  const walker = document.createTreeWalker(document.querySelector(".app"), NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (shouldSkipTranslateNode(node)) return NodeFilter.FILTER_REJECT;
+      return isMeaningfulTranslateText(node.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+    }
+  });
+
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const key = `t${index++}`;
+    const id = `text:${getElementPath(node.parentElement)}:${key}`;
+    payload[key] = node.nodeValue.trim();
+    targets.push({ type: "text", key, node, original: node.nodeValue });
+    rememberKoreanValue(id, { type: "text", node, value: node.nodeValue });
+  }
+
+  document.querySelectorAll(".app input[placeholder]").forEach((input) => {
+    if (shouldSkipTranslateNode(input)) return;
+    const value = input.getAttribute("placeholder");
+    if (!isMeaningfulTranslateText(value)) return;
+    const key = `p${index++}`;
+    const id = `placeholder:${getElementPath(input)}`;
+    payload[key] = value.trim();
+    targets.push({ type: "placeholder", key, node: input, original: value });
+    rememberKoreanValue(id, { type: "placeholder", node: input, value });
+  });
+
+  return { payload, targets };
+}
+
+function normalizeTranslationResult(result) {
+  if (result?.data && typeof result.data === "object") return result.data;
+  if (result?.result && typeof result.result === "object") return result.result;
+  if (result?.translated && typeof result.translated === "object") return result.translated;
+  return result;
+}
+
+function didTranslateChange(result, payload) {
+  return Object.entries(payload).some(([key, value]) => {
+    const translated = result?.[key];
+    return typeof translated === "string" && translated.trim() && translated.trim() !== String(value).trim();
+  });
+}
+
+function setTranslatePlaceholder(targets, enabled) {
+  document.body.classList.toggle("is-translating", enabled);
+  for (const target of targets) {
+    const element = target.type === "text" ? target.node.parentElement : target.node;
+    if (element) element.classList.toggle("translate-placeholder", enabled);
+  }
+}
+
+function applyTranslatedPayload(result, targets) {
+  for (const target of targets) {
+    const value = result?.[target.key];
+    if (typeof value !== "string" || !value.trim()) continue;
+    if (target.type === "text") target.node.nodeValue = target.original.replace(target.original.trim(), value.trim());
+    if (target.type === "placeholder") target.node.setAttribute("placeholder", value.trim());
+  }
+}
+
+function restoreKoreanText() {
+  for (const item of koreanRestoreMap.values()) {
+    if (!item.node || !item.node.isConnected) continue;
+    if (item.type === "text") item.node.nodeValue = item.value;
+    if (item.type === "placeholder") item.node.setAttribute("placeholder", item.value);
+  }
+  document.documentElement.lang = "ko";
+  document.documentElement.dir = "ltr";
+}
+
+function showToast(message, variant = "error") {
+  if (!elements.toastRoot) return;
+  const toast = document.createElement("div");
+  toast.className = `toast ${variant}`;
+  toast.textContent = message;
+  elements.toastRoot.append(toast);
+  window.setTimeout(() => toast.classList.add("show"), 20);
+  window.setTimeout(() => {
+    toast.classList.remove("show");
+    window.setTimeout(() => toast.remove(), 220);
+  }, 3600);
+}
+
+async function changeLanguage(code) {
+  if (translateLoading || code === currentLanguage) return;
+  const language = LANGUAGES.find((item) => item.code === code);
+  if (!language) return;
+
+  if (currentLanguage !== "ko") restoreKoreanText();
+  currentLanguage = code;
+  renderLanguageSwitcher();
+  document.documentElement.lang = code;
+  document.documentElement.dir = language.dir || "ltr";
+
+  if (code === "ko") {
+    restoreKoreanText();
+    return;
+  }
+
+  const { payload, targets } = collectTranslationPayload();
+  if (!Object.keys(payload).length) {
+    showToast("번역할 한국어 텍스트가 없습니다.", "info");
+    return;
+  }
+
+  translateLoading = true;
+  setTranslatePlaceholder(targets, true);
+
+  try {
+    const response = await fetch(SCRIPT_URL, {
+      method: "POST",
+      body: JSON.stringify({ action: "translate_all", target: code, data: payload })
+    });
+    const rawResult = await response.json();
+    if (rawResult.error) throw new Error(rawResult.error);
+    const result = normalizeTranslationResult(rawResult);
+    if (!didTranslateChange(result, payload)) {
+      throw new Error("번역 서버가 원문과 같은 결과를 반환했습니다.");
+    }
+    applyTranslatedPayload(result, targets);
+  } catch (error) {
+    console.error("Translation failed:", error);
+    restoreKoreanText();
+    currentLanguage = "ko";
+    renderLanguageSwitcher();
+    showToast(error.message || "번역 중 오류가 발생했습니다.");
+  } finally {
+    translateLoading = false;
+    setTranslatePlaceholder(targets, false);
+  }
+}
 
 function createId() {
   if (typeof globalThis.crypto?.randomUUID === "function") {
@@ -754,6 +969,10 @@ function escapeHtml(value) {
 elements.nameInput.addEventListener("input", () => {
   localStorage.setItem("voteUserName", elements.nameInput.value);
 });
+elements.languageSwitcher?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-language]");
+  if (button) changeLanguage(button.dataset.language);
+});
 elements.submitPicks.addEventListener("click", savePicks);
 elements.applySettings.addEventListener("click", async () => {
   try {
@@ -807,6 +1026,7 @@ document.addEventListener("keydown", (event) => {
 });
 
 buildBoard();
+renderLanguageSwitcher();
 render();
 ensureFirebaseReady().catch((error) => {
   const message = `Firebase 연결에 실패했습니다: ${error.message}`;
