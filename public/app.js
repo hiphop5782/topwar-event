@@ -12,36 +12,6 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { eventId, firebaseConfig } from "./firebase-config.js";
 
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxPImoRLB4zbQgzixoCts_q5_8zQva4QcyvBEXuSeIpl8FRjs8lneLJgXJEuiZEm7Bs/exec";
-const LANGUAGES = [
-  { code: "ko", label: "Korean", flag: "kr" },
-  { code: "en", label: "English", flag: "us" },
-  { code: "vi", label: "Vietnamese", flag: "vn" },
-  { code: "ja", label: "Japanese", flag: "jp" },
-  { code: "es", label: "Spanish", flag: "es" },
-  { code: "pt", label: "Portuguese", flag: "pt" },
-  { code: "ar", label: "Arabic", flag: "sa", dir: "rtl" },
-  { code: "zh-CN", label: "Chinese", flag: "cn" }
-];
-
-let currentLanguage = "ko";
-let translateLoading = false;
-let koreanRestoreMap = new Map();
-const TRANSLATE_SKIP_SELECTOR = [
-  "[data-no-translate]",
-  "script",
-  "style",
-  ".cell",
-  ".participant strong",
-  ".participant .chip",
-  ".history-item strong",
-  "#pickLimitText",
-  "#participantCount",
-  "#winnerCellText",
-  "#myPickCount",
-  "#myPickLimit"
-].join(", ");
-
 const params = new URLSearchParams(window.location.search);
 let role = "user";
 
@@ -53,8 +23,6 @@ document.body.dataset.role = role;
 
 const elements = {
   board: document.querySelector("#board"),
-  languageSwitcher: document.querySelector("#languageSwitcher"),
-  toastRoot: document.querySelector("#toastRoot"),
   roleBadgeText: document.querySelector("#roleBadgeText"),
   phaseText: document.querySelector("#phaseText"),
   pickLimitText: document.querySelector("#pickLimitText"),
@@ -69,6 +37,7 @@ const elements = {
   submitPicks: document.querySelector("#submitPicks"),
   userMessage: document.querySelector("#userMessage"),
   pickLimitInput: document.querySelector("#pickLimitInput"),
+  allowDuplicateWinnersInput: document.querySelector("#allowDuplicateWinnersInput"),
   applySettings: document.querySelector("#applySettings"),
   forbiddenModeToggle: document.querySelector("#forbiddenModeToggle"),
   openVoting: document.querySelector("#openVoting"),
@@ -89,6 +58,7 @@ const defaultState = {
   boardImageUrl: "map.png",
   drawHistory: [],
   forbiddenCells: [],
+  allowDuplicateWinners: true,
   resetId: "initial"
 };
 const phaseLabels = {
@@ -105,180 +75,12 @@ let myId = localStorage.getItem("voteUserId") || createId();
 let myPicks = [];
 let forbiddenEditMode = false;
 let firebaseReady = false;
+let hasReceivedState = false;
+let lastCelebratedWinnerKey = null;
 
 localStorage.setItem("voteUserId", myId);
 elements.nameInput.value = localStorage.getItem("voteUserName") || "";
 elements.roleBadgeText.textContent = role === "admin" ? "관리자" : "사용자";
-
-function renderLanguageSwitcher() {
-  if (!elements.languageSwitcher) return;
-  elements.languageSwitcher.innerHTML = LANGUAGES
-    .map((language) =>
-      "<button type=\"button\" class=\"language-button " + (language.code === currentLanguage ? "active" : "") + "\" data-language=\"" + language.code + "\" aria-label=\"" + language.label + "\" title=\"" + language.label + "\"><img class=\"flag-icon\" src=\"https://flagcdn.com/w40/" + language.flag + ".png\" srcset=\"https://flagcdn.com/w80/" + language.flag + ".png 2x\" width=\"40\" height=\"30\" alt=\"\" loading=\"lazy\" /></button>"
-    )
-    .join("");
-}
-
-function shouldSkipTranslateNode(node) {
-  const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
-  if (!element) return true;
-  if (element.closest(TRANSLATE_SKIP_SELECTOR)) return true;
-  const box = element.nodeType === Node.ELEMENT_NODE ? element.getBoundingClientRect() : null;
-  const style = window.getComputedStyle(element);
-  return style.display === "none" || style.visibility === "hidden" || (box && box.width === 0 && box.height === 0);
-}
-
-function isMeaningfulTranslateText(value) {
-  const text = String(value || "").trim();
-  if (!text) return false;
-  if (/^[\d\s/.,:()-]+$/.test(text)) return false;
-  if (/^\d+-\d+$/.test(text)) return false;
-  return /[가-힣]/.test(text);
-}
-
-function rememberKoreanValue(id, value) {
-  if (!koreanRestoreMap.has(id)) koreanRestoreMap.set(id, value);
-}
-
-function getElementPath(element) {
-  if (element.id) return "#" + element.id;
-  const parts = [];
-  let current = element;
-  while (current && current !== document.body) {
-    const parent = current.parentElement;
-    if (!parent) break;
-    const index = [...parent.children].indexOf(current) + 1;
-    parts.unshift(current.tagName.toLowerCase() + ":nth-child(" + index + ")");
-    current = parent;
-  }
-  return parts.join(" > ");
-}
-
-function collectTranslationPayload() {
-  const payload = {};
-  const targets = [];
-  let index = 0;
-  const walker = document.createTreeWalker(document.querySelector(".app"), NodeFilter.SHOW_TEXT, {
-    acceptNode(node) {
-      if (shouldSkipTranslateNode(node)) return NodeFilter.FILTER_REJECT;
-      return isMeaningfulTranslateText(node.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
-    }
-  });
-  while (walker.nextNode()) {
-    const node = walker.currentNode;
-    const key = "t" + index++;
-    const id = "text:" + getElementPath(node.parentElement) + ":" + key;
-    payload[key] = node.nodeValue.trim();
-    targets.push({ type: "text", key, node, original: node.nodeValue });
-    rememberKoreanValue(id, { type: "text", node, value: node.nodeValue });
-  }
-  document.querySelectorAll(".app input[placeholder]").forEach((input) => {
-    if (shouldSkipTranslateNode(input)) return;
-    const value = input.getAttribute("placeholder");
-    if (!isMeaningfulTranslateText(value)) return;
-    const key = "p" + index++;
-    const id = "placeholder:" + getElementPath(input);
-    payload[key] = value.trim();
-    targets.push({ type: "placeholder", key, node: input, original: value });
-    rememberKoreanValue(id, { type: "placeholder", node: input, value });
-  });
-  return { payload, targets };
-}
-
-function normalizeTranslationResult(result) {
-  if (result?.data && typeof result.data === "object") return result.data;
-  if (result?.result && typeof result.result === "object") return result.result;
-  if (result?.translated && typeof result.translated === "object") return result.translated;
-  return result;
-}
-
-function didTranslateChange(result, payload) {
-  return Object.entries(payload).some(([key, value]) => {
-    const translated = result?.[key];
-    return typeof translated === "string" && translated.trim() && translated.trim() !== String(value).trim();
-  });
-}
-
-function setTranslatePlaceholder(targets, enabled) {
-  document.body.classList.toggle("is-translating", enabled);
-  for (const target of targets) {
-    const element = target.type === "text" ? target.node.parentElement : target.node;
-    if (element) element.classList.toggle("translate-placeholder", enabled);
-  }
-}
-
-function applyTranslatedPayload(result, targets) {
-  for (const target of targets) {
-    const value = result && result[target.key];
-    if (typeof value !== "string" || !value.trim()) continue;
-    if (target.type === "text") target.node.nodeValue = target.original.replace(target.original.trim(), value.trim());
-    if (target.type === "placeholder") target.node.setAttribute("placeholder", value.trim());
-  }
-}
-
-function restoreKoreanText() {
-  for (const item of koreanRestoreMap.values()) {
-    if (!item.node || !item.node.isConnected) continue;
-    if (item.type === "text") item.node.nodeValue = item.value;
-    if (item.type === "placeholder") item.node.setAttribute("placeholder", item.value);
-  }
-  document.documentElement.lang = "ko";
-  document.documentElement.dir = "ltr";
-}
-
-function showToast(message, variant = "error") {
-  if (!elements.toastRoot) return;
-  const toast = document.createElement("div");
-  toast.className = "toast " + variant;
-  toast.textContent = message;
-  elements.toastRoot.append(toast);
-  window.setTimeout(() => toast.classList.add("show"), 20);
-  window.setTimeout(() => {
-    toast.classList.remove("show");
-    window.setTimeout(() => toast.remove(), 220);
-  }, 3600);
-}
-
-async function changeLanguage(code) {
-  if (translateLoading || code === currentLanguage) return;
-  const language = LANGUAGES.find((item) => item.code === code);
-  if (!language) return;
-  if (currentLanguage !== "ko") restoreKoreanText();
-  currentLanguage = code;
-  renderLanguageSwitcher();
-  document.documentElement.lang = code;
-  document.documentElement.dir = language.dir || "ltr";
-  if (code === "ko") {
-    restoreKoreanText();
-    return;
-  }
-  const { payload, targets } = collectTranslationPayload();
-  if (!Object.keys(payload).length) return;
-  translateLoading = true;
-  setTranslatePlaceholder(targets, true);
-  try {
-    const response = await fetch(SCRIPT_URL, {
-      method: "POST",
-      body: JSON.stringify({ action: "translate_all", target: code, data: payload })
-    });
-    const rawResult = await response.json();
-    if (rawResult.error) throw new Error(rawResult.error);
-    const result = normalizeTranslationResult(rawResult);
-    if (!didTranslateChange(result, payload)) {
-      throw new Error("Translation server returned the original text unchanged.");
-    }
-    applyTranslatedPayload(result, targets);
-  } catch (error) {
-    console.error("Translation failed:", error);
-    restoreKoreanText();
-    currentLanguage = "ko";
-    renderLanguageSwitcher();
-    showToast(error.message || "Translation failed. Please try again.");
-  } finally {
-    translateLoading = false;
-    setTranslatePlaceholder(targets, false);
-  }
-}
 
 function createId() {
   if (typeof globalThis.crypto?.randomUUID === "function") {
@@ -307,6 +109,7 @@ function normalizeState(data = {}) {
     picksPerUser: Math.max(1, Math.min(64, Number(data.picksPerUser) || defaultState.picksPerUser)),
     drawHistory: Array.isArray(data.drawHistory) ? data.drawHistory : [],
     forbiddenCells: Array.isArray(data.forbiddenCells) ? data.forbiddenCells : [],
+    allowDuplicateWinners: data.allowDuplicateWinners !== false,
     resetId: data.resetId || defaultState.resetId,
     users: state.users
   };
@@ -335,7 +138,12 @@ function countByCell() {
 
 function winningUsers() {
   if (state.winnerCell === null) return [];
-  return state.users.filter((user) => (user.picks || []).includes(state.winnerCell));
+  const latestEntry = state.drawHistory?.[0];
+  if (latestEntry?.cell === state.winnerCell && Array.isArray(latestEntry.winners)) {
+    const winnerIds = new Set(latestEntry.winners.map((winner) => winner.id));
+    return state.users.filter((user) => winnerIds.has(user.id));
+  }
+  return rankedWinnersForCell(state.winnerCell).map((winner) => winner.user);
 }
 
 function renderBoard() {
@@ -389,6 +197,7 @@ function renderAdminPanel() {
   if (document.activeElement !== elements.pickLimitInput) {
     elements.pickLimitInput.value = state.picksPerUser;
   }
+  elements.allowDuplicateWinnersInput.checked = state.allowDuplicateWinners !== false;
   elements.applySettings.disabled = !firebaseReady;
   elements.openVoting.disabled = state.phase === "ready" || !firebaseReady;
   elements.lockVoting.disabled = state.phase !== "ready" || !firebaseReady;
@@ -431,6 +240,12 @@ function renderWinner() {
   if (!hasWinner) return;
 
   elements.winnerCellText.textContent = cellLabel(state.winnerCell);
+  const latestEntry = state.drawHistory?.[0];
+  const rankedWinners = latestEntry?.cell === state.winnerCell ? latestEntry.winners || [] : rankWinnerUsers(winners);
+  elements.winnerNamesText.innerHTML = rankedWinners.length
+    ? `<span class="winner-list-title">당첨자</span>${renderWinnerList(rankedWinners)}`
+    : "해당 칸을 선택한 사용자가 없습니다.";
+  return;
   elements.winnerNamesText.textContent = winners.length
     ? `당첨자: ${winners.map((user) => user.name).join(", ")}`
     : "해당 칸을 선택한 사용자가 없습니다.";
@@ -444,7 +259,7 @@ function historyCard(entry, isLatest = false) {
     minute: "2-digit"
   });
   const winnerNames = entry.winners?.length
-    ? entry.winners.map((winner) => winner.name).join(", ")
+    ? entry.winners.map((winner) => `${winner.rank || "-"}위 ${winner.name}`).join(", ")
     : "당첨자 없음";
 
   return `
@@ -453,6 +268,23 @@ function historyCard(entry, isLatest = false) {
       <span>${time}</span>
       <p>${escapeHtml(winnerNames)}</p>
     </article>
+  `;
+}
+
+function renderWinnerList(winners) {
+  return `
+    <ol class="winner-list">
+      ${winners
+        .map(
+          (winner) => `
+            <li>
+              <span class="winner-rank">${winner.rank}위</span>
+              <strong>${escapeHtml(winner.name)}</strong>
+            </li>
+          `
+        )
+        .join("")}
+    </ol>
   `;
 }
 
@@ -548,7 +380,9 @@ async function ensureFirebaseReady() {
   }
 
   onSnapshot(stateRef, (snapshot) => {
-    state = normalizeState(snapshot.data());
+    const nextState = normalizeState(snapshot.data());
+    maybeCelebrateWinner(nextState);
+    state = nextState;
     syncResetState();
     syncMyLocalPicks();
     render();
@@ -574,6 +408,56 @@ function syncMyLocalPicks() {
   myPicks = myPicks.filter((pick) => !forbidden.has(pick)).slice(0, state.picksPerUser);
 }
 
+function maybeCelebrateWinner(nextState) {
+  const latestHistoryId = nextState.drawHistory?.[0]?.id || "no-history";
+  const nextWinnerKey =
+    nextState.phase === "drawn" && nextState.winnerCell !== null
+      ? `${nextState.winnerCell}-${latestHistoryId}`
+      : null;
+
+  if (hasReceivedState && nextWinnerKey && nextWinnerKey !== lastCelebratedWinnerKey) {
+    launchCelebration(cellLabel(nextState.winnerCell));
+  }
+
+  lastCelebratedWinnerKey = nextWinnerKey;
+  hasReceivedState = true;
+}
+
+function launchCelebration(winnerLabel) {
+  document.querySelector(".celebration-layer")?.remove();
+
+  const layer = document.createElement("div");
+  layer.className = "celebration-layer";
+  layer.innerHTML = `
+    <div class="celebration-card">
+      <span>당첨 발표</span>
+      <strong>${winnerLabel}</strong>
+      <p>축하합니다</p>
+    </div>
+  `;
+
+  const colors = ["#e1192d", "#246bfe", "#ffc83d", "#18845b", "#ffffff"];
+  for (let index = 0; index < 96; index += 1) {
+    const piece = document.createElement("i");
+    piece.className = "confetti-piece";
+    piece.style.left = `${Math.random() * 100}%`;
+    piece.style.setProperty("--confetti-x", `${Math.random() * 220 - 110}px`);
+    piece.style.setProperty("--confetti-rotate", `${Math.random() * 720 - 360}deg`);
+    piece.style.setProperty("--confetti-delay", `${Math.random() * 0.3}s`);
+    piece.style.setProperty("--confetti-duration", `${1.8 + Math.random() * 1.2}s`);
+    piece.style.background = colors[index % colors.length];
+    layer.append(piece);
+  }
+
+  document.body.append(layer);
+  elements.winnerBanner.classList.add("celebrate");
+
+  setTimeout(() => {
+    layer.remove();
+    elements.winnerBanner.classList.remove("celebrate");
+  }, 3600);
+}
+
 function syncResetState() {
   const lastResetId = localStorage.getItem("voteResetId");
   if (state.resetId && lastResetId && state.resetId !== lastResetId) {
@@ -597,6 +481,7 @@ async function savePicks() {
       id: myId,
       name,
       picks: myPicks,
+      submittedAt: Date.now(),
       updatedAt: serverTimestamp()
     });
     elements.userMessage.textContent = "선택이 저장되었습니다.";
@@ -625,10 +510,12 @@ async function trimUsersToCurrentRules(nextLimit = state.picksPerUser, forbidden
 
 async function updateSettings(phase = state.phase) {
   const picksPerUser = Math.max(1, Math.min(64, Number(elements.pickLimitInput.value) || 1));
+  const allowDuplicateWinners = elements.allowDuplicateWinnersInput.checked;
   await setDoc(
     stateRef,
     {
       picksPerUser,
+      allowDuplicateWinners,
       phase,
       winnerCell: phase === "drawn" ? state.winnerCell : null,
       updatedAt: serverTimestamp()
@@ -666,13 +553,12 @@ async function draw(cell) {
       return;
     }
 
-    const winners = state.users
-      .filter((user) => (user.picks || []).includes(cell))
-      .map((user) => ({ id: user.id, name: user.name }));
+    const winners = rankedWinnersForCell(cell, state.allowDuplicateWinners !== false).map(({ user, ...winner }) => winner);
     const entry = {
       id: createId(),
       cell,
       winners,
+      allowDuplicateWinners: state.allowDuplicateWinners !== false,
       drawnAt: new Date().toISOString()
     };
 
@@ -690,6 +576,52 @@ async function draw(cell) {
     elements.adminMessage.textContent = error.message;
     elements.adminMessage.classList.add("error");
   }
+}
+
+function rankedWinnersForCell(cell, allowDuplicateWinners = state.allowDuplicateWinners !== false) {
+  const previousWinnerIds = allowDuplicateWinners ? new Set() : previouslyWonUserIds();
+  const users = state.users
+    .filter((user) => (user.picks || []).includes(cell))
+    .filter((user) => !previousWinnerIds.has(user.id))
+    .sort((a, b) => userSelectedAt(a) - userSelectedAt(b) || String(a.name || "").localeCompare(String(b.name || ""), "ko"));
+
+  return rankWinnerUsers(users);
+}
+
+function rankWinnerUsers(users) {
+  let previousTime = null;
+  let currentRank = 0;
+  return users.map((user, index) => {
+    const selectedAt = userSelectedAt(user);
+    if (previousTime === null || selectedAt !== previousTime) {
+      currentRank = index + 1;
+      previousTime = selectedAt;
+    }
+    return {
+      id: user.id,
+      name: user.name,
+      rank: currentRank,
+      selectedAt,
+      user
+    };
+  });
+}
+
+function previouslyWonUserIds() {
+  const ids = new Set();
+  for (const entry of state.drawHistory || []) {
+    for (const winner of entry.winners || []) {
+      ids.add(winner.id);
+    }
+  }
+  return ids;
+}
+
+function userSelectedAt(user) {
+  if (typeof user.submittedAt === "number") return user.submittedAt;
+  if (typeof user.updatedAt?.toMillis === "function") return user.updatedAt.toMillis();
+  if (typeof user.updatedAt === "number") return user.updatedAt;
+  return 0;
 }
 
 async function resetAll() {
@@ -726,16 +658,19 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-elements.languageSwitcher?.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-language]");
-  if (button) changeLanguage(button.dataset.language);
-});
-
 elements.nameInput.addEventListener("input", () => {
   localStorage.setItem("voteUserName", elements.nameInput.value);
 });
 elements.submitPicks.addEventListener("click", savePicks);
 elements.applySettings.addEventListener("click", async () => {
+  try {
+    await updateSettings();
+  } catch (error) {
+    elements.adminMessage.textContent = error.message;
+    elements.adminMessage.classList.add("error");
+  }
+});
+elements.allowDuplicateWinnersInput.addEventListener("change", async () => {
   try {
     await updateSettings();
   } catch (error) {
@@ -767,7 +702,6 @@ elements.resetAll.addEventListener("click", async () => {
   }
 });
 
-renderLanguageSwitcher();
 buildBoard();
 render();
 ensureFirebaseReady().catch((error) => {

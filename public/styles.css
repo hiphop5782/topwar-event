@@ -185,6 +185,10 @@ body[data-role="admin"] .role-badge span {
   font-weight: 800;
 }
 
+.winner-banner.celebrate {
+  animation: winnerPulse 900ms ease-in-out 3;
+}
+
 .layout {
   display: grid;
   grid-template-columns: minmax(360px, 1fr) 320px;
@@ -231,6 +235,25 @@ body[data-role="admin"] .role-badge span {
   border-color: var(--blue);
   background: #eaf2ff;
   color: #1648b8;
+  box-shadow: inset 0 0 0 4px var(--blue), 0 0 0 3px rgba(36, 107, 254, 0.28);
+}
+
+.cell.selected:not(.forbidden)::before {
+  content: "✓";
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--blue);
+  color: #ffffff;
+  font-size: 17px;
+  font-weight: 900;
+  line-height: 24px;
+  text-align: center;
+  z-index: 3;
+  box-shadow: 0 0 0 2px #ffffff;
 }
 
 .cell.has-picks::after {
@@ -330,6 +353,10 @@ body[data-role="admin"] .role-badge span {
 .board.has-image .cell.selected {
   background: rgba(36, 107, 254, 0.32);
   border-color: rgba(36, 107, 254, 0.88);
+}
+
+.board.has-image .cell.selected {
+  background: rgba(36, 107, 254, 0.42);
 }
 
 .board.has-image .cell.winner {
@@ -527,6 +554,112 @@ input {
   margin-top: 10px;
 }
 
+.celebration-layer {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 50;
+}
+
+.celebration-layer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0));
+  animation: celebrationFade 3.4s ease forwards;
+}
+
+.celebration-card {
+  position: relative;
+  z-index: 2;
+  min-width: min(360px, calc(100vw - 40px));
+  padding: 22px 26px;
+  border: 2px solid var(--red);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--ink);
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(17, 24, 39, 0.24);
+  animation: celebrationPop 700ms cubic-bezier(0.2, 1.2, 0.2, 1) both;
+}
+
+.celebration-card span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.celebration-card strong {
+  display: block;
+  color: var(--red);
+  font-size: 46px;
+  line-height: 1;
+}
+
+.celebration-card p {
+  margin: 8px 0 0;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.confetti-piece {
+  position: absolute;
+  top: -24px;
+  width: 10px;
+  height: 18px;
+  border-radius: 2px;
+  opacity: 0;
+  animation: confettiFall var(--confetti-duration) linear var(--confetti-delay) forwards;
+}
+
+@keyframes confettiFall {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, -20px, 0) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--confetti-x), 110vh, 0) rotate(var(--confetti-rotate));
+  }
+}
+
+@keyframes celebrationPop {
+  0% {
+    opacity: 0;
+    transform: scale(0.7) translateY(18px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes celebrationFade {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes winnerPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.015);
+    box-shadow: 0 0 0 5px rgba(225, 25, 45, 0.12);
+  }
+}
+
 @media (max-width: 860px) {
   .topbar,
   .winner-banner,
@@ -575,120 +708,13 @@ input {
     font-size: 16px;
     line-height: 24px;
   }
-}
 
-.header-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.language-switcher {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 7px;
-  flex-wrap: wrap;
-}
-
-.language-button {
-  display: inline-grid;
-  place-items: center;
-  width: 42px;
-  min-width: 42px;
-  height: 42px;
-  min-height: 42px;
-  padding: 0;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.9);
-  line-height: 1;
-}
-
-.language-button .flag-icon {
-  display: block;
-  width: 28px;
-  height: 21px;
-  border-radius: 4px;
-  object-fit: cover;
-  filter: saturate(1.08);
-  box-shadow: 0 0 0 1px rgba(17, 24, 39, 0.08);
-}
-
-.language-button.active {
-  border-color: var(--blue);
-  background: #eaf2ff;
-  box-shadow: 0 0 0 3px rgba(36, 107, 254, 0.14), 0 8px 20px rgba(36, 107, 254, 0.14);
-}
-
-.translate-placeholder {
-  position: relative;
-  overflow: hidden;
-  border-radius: 6px;
-  color: transparent !important;
-  text-shadow: none !important;
-}
-
-input.translate-placeholder::placeholder {
-  color: transparent;
-}
-
-.translate-placeholder::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(110deg, rgba(232, 238, 248, 0.7) 8%, rgba(255, 255, 255, 0.95) 18%, rgba(214, 226, 248, 0.78) 33%);
-  background-size: 220% 100%;
-  box-shadow: 0 0 18px rgba(36, 107, 254, 0.18), inset 0 0 0 1px rgba(255, 255, 255, 0.5);
-  animation: translateShine 1.05s ease-in-out infinite;
-  pointer-events: none;
-}
-
-@keyframes translateShine {
-  0% { background-position: 120% 0; }
-  100% { background-position: -120% 0; }
-}
-
-.toast-root {
-  position: fixed;
-  right: 18px;
-  bottom: 18px;
-  z-index: 1000;
-  display: grid;
-  gap: 10px;
-  width: min(360px, calc(100vw - 36px));
-  pointer-events: none;
-}
-
-.toast {
-  transform: translateY(12px);
-  opacity: 0;
-  border: 1px solid #f0a7ad;
-  border-radius: 12px;
-  padding: 13px 14px;
-  background: #fff7f8;
-  color: var(--red);
-  font-size: 13px;
-  font-weight: 800;
-  line-height: 1.45;
-  box-shadow: 0 18px 45px rgba(17, 24, 39, 0.18);
-  transition: opacity 180ms ease, transform 180ms ease;
-}
-
-.toast.show {
-  transform: translateY(0);
-  opacity: 1;
-}
-
-html[dir="rtl"] body {
-  direction: rtl;
-}
-
-@media (max-width: 860px) {
-  .header-actions,
-  .language-switcher {
-    justify-content: flex-start;
+  .cell.selected:not(.forbidden)::before {
+    left: 4px;
+    top: 4px;
+    width: 18px;
+    height: 18px;
+    font-size: 13px;
+    line-height: 18px;
   }
 }
