@@ -11,8 +11,8 @@
     <main class="app">
       <header class="topbar">
         <div>
-          <p class="eyebrow">3223 서버 수도장 포상 이벤트</p>
-          <h1>기지 날아간 위치 맞추기</h1>
+          <p class="eyebrow" data-i18n>3223 서버 수도장 포상 이벤트</p>
+          <h1 data-i18n>기지 날아간 위치 맞추기</h1>
         </div>
         <div class="header-actions">
           <nav id="languageSwitcher" class="language-switcher" aria-label="언어 선택" data-no-translate></nav>
@@ -24,25 +24,25 @@
 
       <section class="status-strip" aria-live="polite">
         <div>
-          <span class="label">상태</span>
-          <strong id="phaseText">준비 중</strong>
+          <span class="label" data-i18n>상태</span>
+          <strong id="phaseText" data-i18n>준비 중</strong>
         </div>
         <div>
-          <span class="label">선택 수</span>
-          <strong><span id="pickLimitText">3</span>개</strong>
+          <span class="label" data-i18n>선택 수</span>
+          <strong><span id="pickLimitText">3</span><span data-i18n>개</span></strong>
         </div>
         <div>
-          <span class="label">참여자</span>
-          <strong><span id="participantCount">0</span>명</strong>
+          <span class="label" data-i18n>참여자</span>
+          <strong><span id="participantCount">0</span><span data-i18n>명</span></strong>
         </div>
       </section>
 
       <section id="winnerBanner" class="winner-banner" hidden>
         <div>
-          <span>당첨 칸</span>
+          <span data-i18n>당첨 칸</span>
           <strong id="winnerCellText">-</strong>
         </div>
-        <p id="winnerNamesText">당첨자가 없습니다.</p>
+        <p id="winnerNamesText" data-i18n>당첨자가 없습니다.</p>
       </section>
 
       <section class="layout">
@@ -50,75 +50,75 @@
           <div id="board" class="board" aria-label="8x8 선택 보드"></div>
           <section id="winnerRoster" class="winner-roster" hidden>
             <div class="section-title">
-              <h2>당첨 인원</h2>
-              <span id="winnerRosterSummary">아직 당첨 인원이 없습니다.</span>
+              <h2 data-i18n>당첨 인원</h2>
+              <span id="winnerRosterSummary" data-i18n>아직 당첨 인원이 없습니다.</span>
             </div>
             <div id="winnerRosterList"></div>
           </section>
         </div>
 
         <aside class="panel user-panel" data-panel="user">
-          <h2>사용자 선택</h2>
+          <h2 data-i18n>사용자 선택</h2>
           <label>
-            이름
-            <input id="nameInput" autocomplete="name" placeholder="이름을 입력하세요" />
+            <span data-i18n>이름</span>
+            <input id="nameInput" autocomplete="name" placeholder="이름을 입력하세요" data-i18n-placeholder />
           </label>
           <div>
             <div class="panel-row">
-              <span>내 선택</span>
+              <span data-i18n>내 선택</span>
               <strong><span id="myPickCount">0</span>/<span id="myPickLimit">3</span></strong>
             </div>
             <div id="myPicks" class="chips"></div>
           </div>
-          <button id="submitPicks" class="primary">선택 저장</button>
+          <button id="submitPicks" class="primary" data-i18n>선택 저장</button>
           <p id="userMessage" class="message"></p>
         </aside>
 
         <aside class="panel admin-panel" data-panel="admin">
-          <h2>관리자 설정</h2>
+          <h2 data-i18n>관리자 설정</h2>
           <label>
-            사용자당 선택 개수
+            <span data-i18n>사용자당 선택 개수</span>
             <input id="pickLimitInput" type="number" min="1" max="64" value="3" />
           </label>
           <label>
-            당첨 인원
+            <span data-i18n>당첨 인원</span>
             <input id="winnerLimitInput" type="number" min="1" max="64" value="1" />
           </label>
           <label class="checkbox-row">
             <input id="allowDuplicateWinnersInput" type="checkbox" checked />
-            <span>중복 당첨 허용</span>
+            <span data-i18n>중복 당첨 허용</span>
           </label>
-          <button id="applySettings" class="primary">설정 적용</button>
-          <button id="forbiddenModeToggle" class="mode-toggle">선택 금지 칸 편집</button>
+          <button id="applySettings" class="primary" data-i18n>설정 적용</button>
+          <button id="forbiddenModeToggle" class="mode-toggle" data-i18n>선택 금지 칸 편집</button>
           <div class="button-grid">
-            <button id="openVoting">선택 시작</button>
-            <button id="lockVoting">선택 마감</button>
+            <button id="openVoting" data-i18n>선택 시작</button>
+            <button id="lockVoting" data-i18n>선택 마감</button>
           </div>
-          <button id="resetPicksOnly">선택만 초기화</button>
-          <button id="resetWinnerHistory">당첨 내역만 초기화</button>
-          <button id="resetAll" class="danger">모든 내역 초기화</button>
-          <p id="adminMessage" class="message">관리자는 보드 칸을 눌러 당첨 칸을 발표할 수 있습니다.</p>
+          <button id="resetPicksOnly" data-i18n>선택만 초기화</button>
+          <button id="resetWinnerHistory" data-i18n>당첨 내역만 초기화</button>
+          <button id="resetAll" class="danger" data-i18n>모든 내역 초기화</button>
+          <p id="adminMessage" class="message" data-i18n>관리자는 보드 칸을 눌러 당첨 칸을 발표할 수 있습니다.</p>
         </aside>
       </section>
 
       <section class="participants">
         <div class="section-title">
-          <h2>참여 현황</h2>
-          <span id="selectedCellsSummary">아직 선택된 칸이 없습니다.</span>
+          <h2 data-i18n>참여 현황</h2>
+          <span id="selectedCellsSummary" data-i18n>아직 선택된 칸이 없습니다.</span>
         </div>
         <div id="participantsList" class="participant-list"></div>
       </section>
 
       <section class="history">
         <div class="section-title">
-          <h2>당첨 내역</h2>
-          <span id="historySummary">아직 발표 기록이 없습니다.</span>
+          <h2 data-i18n>당첨 내역</h2>
+          <span id="historySummary" data-i18n>아직 발표 기록이 없습니다.</span>
         </div>
         <div id="historyList"></div>
       </section>
       <div id="toastRoot" class="toast-root" aria-live="assertive" aria-atomic="true"></div>
     </main>
 
-    <script src="./app.js?v=20260618-7" type="module"></script>
+    <script src="./app.js?v=20260618-8" type="module"></script>
   </body>
 </html>

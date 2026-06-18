@@ -113,10 +113,12 @@ let celebrationTimer = null;
 let currentLanguage = "ko";
 let translateLoading = false;
 let koreanRestoreMap = new Map();
+let staticTranslationItems = [];
 
 localStorage.setItem("voteUserId", myId);
 elements.nameInput.value = localStorage.getItem("voteUserName") || "";
 elements.roleBadgeText.textContent = role === "admin" ? "관리자" : "사용자";
+staticTranslationItems = collectStaticTranslationItems();
 
 function renderLanguageSwitcher() {
   if (!elements.languageSwitcher) return;
@@ -160,6 +162,25 @@ function isMeaningfulTranslateText(value) {
   return /[가-힣]/.test(text);
 }
 
+function directTextNode(element) {
+  return [...element.childNodes].find((child) => child.nodeType === Node.TEXT_NODE && child.nodeValue.trim());
+}
+
+function collectStaticTranslationItems() {
+  const textItems = [...document.querySelectorAll("[data-i18n]")]
+    .map((element) => {
+      const node = directTextNode(element);
+      return node ? { type: "text", element, value: node.nodeValue } : null;
+    })
+    .filter((item) => item && isMeaningfulTranslateText(item.value));
+
+  const placeholderItems = [...document.querySelectorAll("[data-i18n-placeholder][placeholder]")]
+    .map((element) => ({ type: "placeholder", element, value: element.getAttribute("placeholder") || "" }))
+    .filter((item) => isMeaningfulTranslateText(item.value));
+
+  return [...textItems, ...placeholderItems];
+}
+
 function rememberKoreanValue(id, value) {
   if (!koreanRestoreMap.has(id)) koreanRestoreMap.set(id, value);
 }
@@ -182,31 +203,27 @@ function collectTranslationPayload() {
   const payload = {};
   const targets = [];
   let index = 0;
-  const walker = document.createTreeWalker(document.querySelector(".app"), NodeFilter.SHOW_TEXT, {
-    acceptNode(node) {
-      if (shouldSkipTranslateNode(node)) return NodeFilter.FILTER_REJECT;
-      return isMeaningfulTranslateText(node.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+
+  staticTranslationItems.forEach((item) => {
+    if (!item.element.isConnected || shouldSkipTranslateNode(item.element)) return;
+    if (item.type === "text") {
+      const node = directTextNode(item.element);
+      if (!node) return;
+      const key = `t${index++}`;
+      const id = `text:${getElementPath(item.element)}:${key}`;
+      payload[key] = item.value.trim();
+      targets.push({ type: "text", key, node, original: item.value });
+      rememberKoreanValue(id, { type: "text", node, value: item.value });
+      return;
     }
-  });
 
-  while (walker.nextNode()) {
-    const node = walker.currentNode;
-    const key = `t${index++}`;
-    const id = `text:${getElementPath(node.parentElement)}:${key}`;
-    payload[key] = node.nodeValue.trim();
-    targets.push({ type: "text", key, node, original: node.nodeValue });
-    rememberKoreanValue(id, { type: "text", node, value: node.nodeValue });
-  }
-
-  document.querySelectorAll(".app input[placeholder]").forEach((input) => {
+    const input = item.element;
     if (shouldSkipTranslateNode(input)) return;
-    const value = input.getAttribute("placeholder");
-    if (!isMeaningfulTranslateText(value)) return;
     const key = `p${index++}`;
     const id = `placeholder:${getElementPath(input)}`;
-    payload[key] = value.trim();
-    targets.push({ type: "placeholder", key, node: input, original: value });
-    rememberKoreanValue(id, { type: "placeholder", node: input, value });
+    payload[key] = item.value.trim();
+    targets.push({ type: "placeholder", key, node: input, original: item.value });
+    rememberKoreanValue(id, { type: "placeholder", node: input, value: item.value });
   });
 
   return { payload, targets };
@@ -233,7 +250,7 @@ function setTranslatePlaceholder(targets, enabled) {
     if (element) element.classList.toggle("translate-placeholder", enabled);
     if (!enabled) continue;
     if (target.type === "text") {
-      target.node.nodeValue = target.original.replace(target.original.trim(), placeholderText(target.original.trim()));
+      target.node.nodeValue = placeholderText(target.original.trim());
     }
     if (target.type === "placeholder") {
       target.node.setAttribute("placeholder", "············");
@@ -250,7 +267,7 @@ function applyTranslatedPayload(result, targets) {
   for (const target of targets) {
     const value = result?.[target.key];
     if (typeof value !== "string" || !value.trim()) continue;
-    if (target.type === "text") target.node.nodeValue = target.original.replace(target.original.trim(), value.trim());
+    if (target.type === "text") target.node.nodeValue = value.trim();
     if (target.type === "placeholder") target.node.setAttribute("placeholder", value.trim());
   }
 }

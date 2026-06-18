@@ -81,7 +81,7 @@ GitHub Pages에는 `public` 폴더의 정적 파일이 올라가면 됩니다.
 
 ```html
 <link rel="stylesheet" href="./styles.css?v=20260618-6" />
-<script src="./app.js?v=20260618-7" type="module"></script>
+<script src="./app.js?v=20260618-8" type="module"></script>
 ```
 
 `app.js` 또는 `styles.css`를 수정한 뒤 배포한다면 이 버전 숫자를 올리는 편이 안전합니다.
@@ -114,7 +114,7 @@ window.prompt("관리자 비밀번호를 입력하세요.") === "3223"
 - `resetPicksOnly`: 참여자 선택만 초기화
 - `resetWinnerHistoryOnly`: 당첨 내역만 초기화
 - `resetAll`: 전체 초기화
-- `changeLanguage`: 화면 텍스트를 수집해 번역 API로 전송
+- `changeLanguage`: 최초 고정 화면 텍스트를 수집해 번역 API로 전송
 
 ## 번역 API
 
@@ -133,7 +133,7 @@ window.prompt("관리자 비밀번호를 입력하세요.") === "3223"
 }
 ```
 
-응답은 같은 키를 가진 객체를 기대합니다.
+응답은 같은 키를 가진 객체를 기대합니다. 번역 수집 대상은 HTML에서 `data-i18n`, `data-i18n-placeholder`가 붙은 최초 고정 문구로 제한합니다.
 
 ## 검증 명령
 
