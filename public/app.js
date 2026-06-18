@@ -47,6 +47,7 @@ const elements = {
   openVoting: document.querySelector("#openVoting"),
   lockVoting: document.querySelector("#lockVoting"),
   resetPicksOnly: document.querySelector("#resetPicksOnly"),
+  resetWinnerHistory: document.querySelector("#resetWinnerHistory"),
   resetAll: document.querySelector("#resetAll"),
   adminMessage: document.querySelector("#adminMessage"),
   participantsList: document.querySelector("#participantsList"),
@@ -82,6 +83,7 @@ let forbiddenEditMode = false;
 let firebaseReady = false;
 let hasReceivedState = false;
 let lastCelebratedWinnerKey = null;
+let celebrationTimer = null;
 
 localStorage.setItem("voteUserId", myId);
 elements.nameInput.value = localStorage.getItem("voteUserName") || "";
@@ -149,7 +151,7 @@ function winningUsers() {
     const winnerIds = new Set(latestEntry.winners.map((winner) => winner.id));
     return state.users.filter((user) => winnerIds.has(user.id));
   }
-  return rankedWinnersForCell(state.winnerCell).map((winner) => winner.user);
+  return orderedWinnersForCell(state.winnerCell).map((winner) => winner.user);
 }
 
 function renderBoard() {
@@ -211,6 +213,7 @@ function renderAdminPanel() {
   elements.openVoting.disabled = state.phase === "ready" || !firebaseReady;
   elements.lockVoting.disabled = state.phase !== "ready" || !firebaseReady;
   elements.resetPicksOnly.disabled = !firebaseReady;
+  elements.resetWinnerHistory.disabled = !firebaseReady || !state.drawHistory.length;
   elements.resetAll.disabled = !firebaseReady;
   elements.forbiddenModeToggle.disabled = !firebaseReady;
   elements.forbiddenModeToggle.classList.toggle("active", forbiddenEditMode);
@@ -477,40 +480,59 @@ function maybeCelebrateWinner(nextState) {
 }
 
 function launchCelebration(winnerLabel, winners = []) {
-  document.querySelector(".celebration-layer")?.remove();
-  const winnerText = winners.length ? winners.map((winner) => winner.name).join(", ") : "당첨자 없음";
+  closeCelebration();
+  const winnerNames = winners.map((winner) => winner.name).filter(Boolean);
+  const hasWinners = winnerNames.length > 0;
+  const winnerText = hasWinners ? winnerNames.join(", ") : "해당 칸을 선택한 사용자가 없습니다.";
 
   const layer = document.createElement("div");
-  layer.className = "celebration-layer";
+  layer.className = `celebration-layer${hasWinners ? "" : " no-winners"}`;
   layer.innerHTML = `
     <div class="celebration-card">
+      <button class="celebration-close" type="button" aria-label="알림 닫기">×</button>
       <span>당첨 발표</span>
       <strong>${winnerLabel}</strong>
       <em>${escapeHtml(winnerText)}</em>
-      <p>축하합니다</p>
+      <p>${hasWinners ? "축하합니다" : "당첨자가 없습니다"}</p>
     </div>
   `;
 
-  const colors = ["#e1192d", "#246bfe", "#ffc83d", "#18845b", "#ffffff"];
-  for (let index = 0; index < 96; index += 1) {
-    const piece = document.createElement("i");
-    piece.className = "confetti-piece";
-    piece.style.left = `${Math.random() * 100}%`;
-    piece.style.setProperty("--confetti-x", `${Math.random() * 220 - 110}px`);
-    piece.style.setProperty("--confetti-rotate", `${Math.random() * 720 - 360}deg`);
-    piece.style.setProperty("--confetti-delay", `${Math.random() * 0.3}s`);
-    piece.style.setProperty("--confetti-duration", `${1.8 + Math.random() * 1.2}s`);
-    piece.style.background = colors[index % colors.length];
-    layer.append(piece);
+  layer.addEventListener("click", (event) => {
+    if (event.target === layer || event.target.closest(".celebration-close")) {
+      closeCelebration();
+    }
+  });
+
+  if (hasWinners) {
+    const colors = ["#e1192d", "#246bfe", "#ffc83d", "#18845b", "#ffffff"];
+    for (let index = 0; index < 96; index += 1) {
+      const piece = document.createElement("i");
+      piece.className = "confetti-piece";
+      piece.style.left = `${Math.random() * 100}%`;
+      piece.style.setProperty("--confetti-x", `${Math.random() * 220 - 110}px`);
+      piece.style.setProperty("--confetti-rotate", `${Math.random() * 720 - 360}deg`);
+      piece.style.setProperty("--confetti-delay", `${Math.random() * 0.3}s`);
+      piece.style.setProperty("--confetti-duration", `${1.4 + Math.random() * 0.8}s`);
+      piece.style.background = colors[index % colors.length];
+      layer.append(piece);
+    }
   }
 
   document.body.append(layer);
-  elements.winnerBanner.classList.add("celebrate");
+  if (hasWinners) {
+    elements.winnerBanner.classList.add("celebrate");
+  }
 
-  setTimeout(() => {
-    layer.remove();
-    elements.winnerBanner.classList.remove("celebrate");
-  }, 3600);
+  celebrationTimer = setTimeout(closeCelebration, hasWinners ? 2400 : 1800);
+}
+
+function closeCelebration() {
+  if (celebrationTimer) {
+    clearTimeout(celebrationTimer);
+    celebrationTimer = null;
+  }
+  document.querySelector(".celebration-layer")?.remove();
+  elements.winnerBanner.classList.remove("celebrate");
 }
 
 function syncResetState() {
@@ -610,7 +632,7 @@ async function draw(cell) {
       return;
     }
 
-    const winners = rankedWinnersForCell(cell, state.allowDuplicateWinners !== false, state.winnerLimit).map(
+    const winners = orderedWinnersForCell(cell, state.allowDuplicateWinners !== false, state.winnerLimit).map(
       ({ user, ...winner }) => winner
     );
     const entry = {
@@ -638,7 +660,7 @@ async function draw(cell) {
   }
 }
 
-function rankedWinnersForCell(
+function orderedWinnersForCell(
   cell,
   allowDuplicateWinners = state.allowDuplicateWinners !== false,
   winnerLimit = state.winnerLimit
@@ -649,22 +671,16 @@ function rankedWinnersForCell(
     .filter((user) => !previousWinnerIds.has(user.id))
     .sort((a, b) => userSelectedAt(a) - userSelectedAt(b) || String(a.name || "").localeCompare(String(b.name || ""), "ko"));
 
-  return rankWinnerUsers(users).filter((winner) => winner.rank <= winnerLimit);
+  return orderWinnerUsers(users).slice(0, winnerLimit);
 }
 
-function rankWinnerUsers(users) {
-  let previousTime = null;
-  let currentRank = 0;
+function orderWinnerUsers(users) {
   return users.map((user, index) => {
     const selectedAt = userSelectedAt(user);
-    if (previousTime === null || selectedAt !== previousTime) {
-      currentRank = index + 1;
-      previousTime = selectedAt;
-    }
     return {
       id: user.id,
       name: user.name,
-      rank: currentRank,
+      winningOrder: index + 1,
       selectedAt,
       user
     };
@@ -713,6 +729,19 @@ async function resetPicksOnly() {
   await batch.commit();
 }
 
+async function resetWinnerHistoryOnly() {
+  await setDoc(
+    stateRef,
+    {
+      phase: "locked",
+      winnerCell: null,
+      drawHistory: [],
+      updatedAt: serverTimestamp()
+    },
+    { merge: true }
+  );
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -758,11 +787,22 @@ elements.resetPicksOnly.addEventListener("click", async () => {
     await resetPicksOnly();
   }
 });
+elements.resetWinnerHistory.addEventListener("click", async () => {
+  if (confirm("참여자 선택과 선택 금지 칸은 유지하고 당첨 내역만 초기화할까요?")) {
+    forbiddenEditMode = false;
+    await resetWinnerHistoryOnly();
+  }
+});
 elements.resetAll.addEventListener("click", async () => {
   if (confirm("참여자, 당첨 내역, 선택 금지 칸을 모두 초기화할까요?")) {
     myPicks = [];
     forbiddenEditMode = false;
     await resetAll();
+  }
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    closeCelebration();
   }
 });
 

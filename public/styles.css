@@ -217,7 +217,7 @@ body[data-role="admin"] .role-badge span {
 }
 
 .winner-roster {
-  margin-bottom: 14px;
+  margin-top: 14px;
   padding: 18px;
   border-color: #f0a7ad;
   background: #fff8f8;
@@ -660,7 +660,7 @@ input {
   display: grid;
   place-items: center;
   overflow: hidden;
-  pointer-events: none;
+  cursor: pointer;
   z-index: 9999;
 }
 
@@ -671,7 +671,7 @@ input {
   background:
     radial-gradient(circle at center, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.2) 54%, rgba(255, 255, 255, 0)),
     rgba(17, 24, 39, 0.18);
-  animation: celebrationFade 3.4s ease forwards;
+  animation: celebrationFade 2.4s ease forwards;
 }
 
 .celebration-card {
@@ -685,7 +685,31 @@ input {
   color: var(--ink);
   text-align: center;
   box-shadow: 0 24px 80px rgba(17, 24, 39, 0.35), 0 0 0 8px rgba(225, 25, 45, 0.12);
+  cursor: default;
   animation: celebrationPop 700ms cubic-bezier(0.2, 1.2, 0.2, 1) both;
+}
+
+.celebration-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: #f2f4f8;
+  color: var(--muted);
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 32px;
+  cursor: pointer;
+}
+
+.celebration-close:hover {
+  background: #e7ebf2;
+  transform: none;
 }
 
 .celebration-card span {
@@ -718,6 +742,19 @@ input {
   margin: 8px 0 0;
   font-size: 20px;
   font-weight: 900;
+}
+
+.celebration-layer.no-winners .celebration-card {
+  border-color: var(--line);
+  box-shadow: 0 18px 54px rgba(17, 24, 39, 0.24);
+}
+
+.celebration-layer.no-winners .celebration-card strong {
+  color: var(--ink);
+}
+
+.celebration-layer.no-winners .celebration-card p {
+  color: var(--muted);
 }
 
 .confetti-piece {

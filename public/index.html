@@ -42,17 +42,16 @@
         <p id="winnerNamesText">당첨자가 없습니다.</p>
       </section>
 
-      <section id="winnerRoster" class="winner-roster" hidden>
-        <div class="section-title">
-          <h2>당첨 인원</h2>
-          <span id="winnerRosterSummary">아직 당첨 인원이 없습니다.</span>
-        </div>
-        <div id="winnerRosterList"></div>
-      </section>
-
       <section class="layout">
         <div class="board-wrap">
           <div id="board" class="board" aria-label="8x8 선택 보드"></div>
+          <section id="winnerRoster" class="winner-roster" hidden>
+            <div class="section-title">
+              <h2>당첨 인원</h2>
+              <span id="winnerRosterSummary">아직 당첨 인원이 없습니다.</span>
+            </div>
+            <div id="winnerRosterList"></div>
+          </section>
         </div>
 
         <aside class="panel user-panel" data-panel="user">
@@ -93,6 +92,7 @@
             <button id="lockVoting">선택 마감</button>
           </div>
           <button id="resetPicksOnly">선택만 초기화</button>
+          <button id="resetWinnerHistory">당첨 내역만 초기화</button>
           <button id="resetAll" class="danger">모든 내역 초기화</button>
           <p id="adminMessage" class="message">관리자는 보드 칸을 눌러 당첨 칸을 발표할 수 있습니다.</p>
         </aside>
@@ -115,6 +115,6 @@
       </section>
     </main>
 
-    <script src="./app.js?v=20260618-4" type="module"></script>
+    <script src="./app.js?v=20260618-6" type="module"></script>
   </body>
 </html>
