@@ -249,12 +249,9 @@ function renderWinner() {
   if (!hasWinner) return;
 
   elements.winnerCellText.textContent = cellLabel(state.winnerCell);
-  elements.winnerNamesText.textContent = winners.length
-    ? `당첨 인원 ${winners.length}명`
-    : "해당 칸을 선택한 사용자가 없습니다.";
-  return;
-  elements.winnerNamesText.textContent = winners.length
-    ? `당첨자: ${winners.map((user) => user.name).join(", ")}`
+  const winnerNames = winners.map((user) => user.name).filter(Boolean);
+  elements.winnerNamesText.textContent = winnerNames.length
+    ? `당첨자: ${winnerNames.join(", ")}`
     : "해당 칸을 선택한 사용자가 없습니다.";
 }
 
@@ -279,7 +276,6 @@ function renderWinnerRoster() {
         .map(
           (row) => `
             <li>
-              <span class="winner-rank">${row.rank}위</span>
               <strong>${escapeHtml(row.name)}</strong>
               <small>${cellLabel(row.cell)} / ${row.time}</small>
             </li>
@@ -298,11 +294,13 @@ function cumulativeWinnerRows() {
       hour: "2-digit",
       minute: "2-digit"
     });
-    return (entry.winners || []).map((winner) => ({
-      ...winner,
-      cell: entry.cell,
-      time
-    }));
+    return (entry.winners || [])
+      .filter((winner) => winner?.name)
+      .map((winner) => ({
+        ...winner,
+        cell: entry.cell,
+        time
+      }));
   });
 }
 
@@ -325,13 +323,14 @@ function historyCard(entry, isLatest = false) {
 }
 
 function renderWinnerList(winners) {
+  const namedWinners = winners.filter((winner) => winner?.name);
+
   return `
     <ol class="winner-list">
-      ${winners
+      ${namedWinners
         .map(
           (winner) => `
             <li>
-              <span class="winner-rank">${winner.rank}위</span>
               <strong>${escapeHtml(winner.name)}</strong>
             </li>
           `
