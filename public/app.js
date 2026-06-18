@@ -30,6 +30,9 @@ const elements = {
   winnerBanner: document.querySelector("#winnerBanner"),
   winnerCellText: document.querySelector("#winnerCellText"),
   winnerNamesText: document.querySelector("#winnerNamesText"),
+  winnerRoster: document.querySelector("#winnerRoster"),
+  winnerRosterSummary: document.querySelector("#winnerRosterSummary"),
+  winnerRosterList: document.querySelector("#winnerRosterList"),
   nameInput: document.querySelector("#nameInput"),
   myPickCount: document.querySelector("#myPickCount"),
   myPickLimit: document.querySelector("#myPickLimit"),
@@ -240,15 +243,30 @@ function renderWinner() {
   if (!hasWinner) return;
 
   elements.winnerCellText.textContent = cellLabel(state.winnerCell);
-  const latestEntry = state.drawHistory?.[0];
-  const rankedWinners = latestEntry?.cell === state.winnerCell ? latestEntry.winners || [] : rankWinnerUsers(winners);
-  elements.winnerNamesText.innerHTML = rankedWinners.length
-    ? `<span class="winner-list-title">당첨자</span>${renderWinnerList(rankedWinners)}`
+  elements.winnerNamesText.textContent = winners.length
+    ? `당첨 인원 ${winners.length}명`
     : "해당 칸을 선택한 사용자가 없습니다.";
   return;
   elements.winnerNamesText.textContent = winners.length
     ? `당첨자: ${winners.map((user) => user.name).join(", ")}`
     : "해당 칸을 선택한 사용자가 없습니다.";
+}
+
+function renderWinnerRoster() {
+  const latestEntry = state.drawHistory?.[0];
+  const winners = latestEntry?.winners || [];
+  elements.winnerRoster.hidden = !latestEntry;
+
+  if (!latestEntry) {
+    elements.winnerRosterSummary.textContent = "아직 당첨 인원이 없습니다.";
+    elements.winnerRosterList.innerHTML = "";
+    return;
+  }
+
+  elements.winnerRosterSummary.textContent = `${cellLabel(latestEntry.cell)} 칸, ${winners.length}명`;
+  elements.winnerRosterList.innerHTML = winners.length
+    ? renderWinnerList(winners)
+    : `<p class="message">해당 칸을 선택한 사용자가 없습니다.</p>`;
 }
 
 function historyCard(entry, isLatest = false) {
@@ -258,15 +276,13 @@ function historyCard(entry, isLatest = false) {
     hour: "2-digit",
     minute: "2-digit"
   });
-  const winnerNames = entry.winners?.length
-    ? entry.winners.map((winner) => `${winner.rank || "-"}위 ${winner.name}`).join(", ")
-    : "당첨자 없음";
+  const winnerCount = entry.winners?.length || 0;
 
   return `
     <article class="history-item ${isLatest ? "latest" : ""}">
       <strong>${cellLabel(entry.cell)}</strong>
       <span>${time}</span>
-      <p>${escapeHtml(winnerNames)}</p>
+      <p>당첨 인원 ${winnerCount}명</p>
     </article>
   `;
 }
@@ -325,6 +341,7 @@ function render() {
   renderAdminPanel();
   renderParticipants();
   renderWinner();
+  renderWinnerRoster();
   renderHistory();
 }
 
