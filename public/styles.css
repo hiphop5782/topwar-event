@@ -233,6 +233,37 @@ body[data-role="admin"] .role-badge span {
   background: #fff8f8;
 }
 
+.winner-roster-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.winner-roster-list li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 5px 8px;
+  border: 1px solid #f0c5c9;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fff;
+}
+
+.winner-roster-list strong {
+  min-width: 0;
+}
+
+.winner-roster-list small {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .layout {
   display: grid;
   grid-template-columns: minmax(360px, 1fr) 320px;
@@ -681,6 +712,17 @@ input {
   color: var(--red);
   font-size: 64px;
   line-height: 1;
+}
+
+.celebration-card em {
+  display: block;
+  margin-top: 12px;
+  color: var(--ink);
+  font-size: 20px;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1.35;
+  word-break: keep-all;
 }
 
 .celebration-card p {

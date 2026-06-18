@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>기지 날아간 위치 맞추기</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="./styles.css?v=20260618-4" />
+    <link rel="stylesheet" href="./styles.css?v=20260618-6" />
   </head>
   <body>
     <main class="app">
@@ -78,6 +78,10 @@
             사용자당 선택 개수
             <input id="pickLimitInput" type="number" min="1" max="64" value="3" />
           </label>
+          <label>
+            당첨 인원
+            <input id="winnerLimitInput" type="number" min="1" max="64" value="1" />
+          </label>
           <label class="checkbox-row">
             <input id="allowDuplicateWinnersInput" type="checkbox" checked />
             <span>중복 당첨 허용</span>
@@ -111,6 +115,6 @@
       </section>
     </main>
 
-    <script src="./app.js?v=20260618-2" type="module"></script>
+    <script src="./app.js?v=20260618-4" type="module"></script>
   </body>
 </html>

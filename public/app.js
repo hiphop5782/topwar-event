@@ -40,6 +40,7 @@ const elements = {
   submitPicks: document.querySelector("#submitPicks"),
   userMessage: document.querySelector("#userMessage"),
   pickLimitInput: document.querySelector("#pickLimitInput"),
+  winnerLimitInput: document.querySelector("#winnerLimitInput"),
   allowDuplicateWinnersInput: document.querySelector("#allowDuplicateWinnersInput"),
   applySettings: document.querySelector("#applySettings"),
   forbiddenModeToggle: document.querySelector("#forbiddenModeToggle"),
@@ -57,6 +58,7 @@ const elements = {
 const defaultState = {
   phase: "ready",
   picksPerUser: 3,
+  winnerLimit: 1,
   winnerCell: null,
   boardImageUrl: "map.png",
   drawHistory: [],
@@ -110,6 +112,7 @@ function normalizeState(data = {}) {
     ...defaultState,
     ...data,
     picksPerUser: Math.max(1, Math.min(64, Number(data.picksPerUser) || defaultState.picksPerUser)),
+    winnerLimit: Math.max(1, Math.min(64, Number(data.winnerLimit) || defaultState.winnerLimit)),
     drawHistory: Array.isArray(data.drawHistory) ? data.drawHistory : [],
     forbiddenCells: Array.isArray(data.forbiddenCells) ? data.forbiddenCells : [],
     allowDuplicateWinners: data.allowDuplicateWinners !== false,
@@ -200,6 +203,9 @@ function renderAdminPanel() {
   if (document.activeElement !== elements.pickLimitInput) {
     elements.pickLimitInput.value = state.picksPerUser;
   }
+  if (document.activeElement !== elements.winnerLimitInput) {
+    elements.winnerLimitInput.value = state.winnerLimit;
+  }
   elements.allowDuplicateWinnersInput.checked = state.allowDuplicateWinners !== false;
   elements.applySettings.disabled = !firebaseReady;
   elements.openVoting.disabled = state.phase === "ready" || !firebaseReady;
@@ -253,20 +259,51 @@ function renderWinner() {
 }
 
 function renderWinnerRoster() {
-  const latestEntry = state.drawHistory?.[0];
-  const winners = latestEntry?.winners || [];
-  elements.winnerRoster.hidden = !latestEntry;
+  const rows = cumulativeWinnerRows();
+  elements.winnerRoster.hidden = !state.drawHistory.length;
 
-  if (!latestEntry) {
-    elements.winnerRosterSummary.textContent = "아직 당첨 인원이 없습니다.";
-    elements.winnerRosterList.innerHTML = "";
+  if (!rows.length) {
+    elements.winnerRosterSummary.textContent = state.drawHistory.length
+      ? "누적 당첨 인원이 없습니다."
+      : "아직 당첨 인원이 없습니다.";
+    elements.winnerRosterList.innerHTML = state.drawHistory.length
+      ? `<p class="message">발표된 칸에 당첨자가 없습니다.</p>`
+      : "";
     return;
   }
 
-  elements.winnerRosterSummary.textContent = `${cellLabel(latestEntry.cell)} 칸, ${winners.length}명`;
-  elements.winnerRosterList.innerHTML = winners.length
-    ? renderWinnerList(winners)
-    : `<p class="message">해당 칸을 선택한 사용자가 없습니다.</p>`;
+  elements.winnerRosterSummary.textContent = `누적 ${rows.length}명`;
+  elements.winnerRosterList.innerHTML = `
+    <ol class="winner-roster-list">
+      ${rows
+        .map(
+          (row) => `
+            <li>
+              <span class="winner-rank">${row.rank}위</span>
+              <strong>${escapeHtml(row.name)}</strong>
+              <small>${cellLabel(row.cell)} / ${row.time}</small>
+            </li>
+          `
+        )
+        .join("")}
+    </ol>
+  `;
+}
+
+function cumulativeWinnerRows() {
+  return (state.drawHistory || []).flatMap((entry) => {
+    const time = new Date(entry.drawnAt).toLocaleString("ko-KR", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+    return (entry.winners || []).map((winner) => ({
+      ...winner,
+      cell: entry.cell,
+      time
+    }));
+  });
 }
 
 function historyCard(entry, isLatest = false) {
@@ -433,15 +470,16 @@ function maybeCelebrateWinner(nextState) {
       : null;
 
   if (hasReceivedState && nextWinnerKey && nextWinnerKey !== lastCelebratedWinnerKey) {
-    launchCelebration(cellLabel(nextState.winnerCell));
+    launchCelebration(cellLabel(nextState.winnerCell), nextState.drawHistory?.[0]?.winners || []);
   }
 
   lastCelebratedWinnerKey = nextWinnerKey;
   hasReceivedState = true;
 }
 
-function launchCelebration(winnerLabel) {
+function launchCelebration(winnerLabel, winners = []) {
   document.querySelector(".celebration-layer")?.remove();
+  const winnerText = winners.length ? winners.map((winner) => winner.name).join(", ") : "당첨자 없음";
 
   const layer = document.createElement("div");
   layer.className = "celebration-layer";
@@ -449,6 +487,7 @@ function launchCelebration(winnerLabel) {
     <div class="celebration-card">
       <span>당첨 발표</span>
       <strong>${winnerLabel}</strong>
+      <em>${escapeHtml(winnerText)}</em>
       <p>축하합니다</p>
     </div>
   `;
@@ -527,11 +566,13 @@ async function trimUsersToCurrentRules(nextLimit = state.picksPerUser, forbidden
 
 async function updateSettings(phase = state.phase) {
   const picksPerUser = Math.max(1, Math.min(64, Number(elements.pickLimitInput.value) || 1));
+  const winnerLimit = Math.max(1, Math.min(64, Number(elements.winnerLimitInput.value) || 1));
   const allowDuplicateWinners = elements.allowDuplicateWinnersInput.checked;
   await setDoc(
     stateRef,
     {
       picksPerUser,
+      winnerLimit,
       allowDuplicateWinners,
       phase,
       winnerCell: phase === "drawn" ? state.winnerCell : null,
@@ -570,11 +611,14 @@ async function draw(cell) {
       return;
     }
 
-    const winners = rankedWinnersForCell(cell, state.allowDuplicateWinners !== false).map(({ user, ...winner }) => winner);
+    const winners = rankedWinnersForCell(cell, state.allowDuplicateWinners !== false, state.winnerLimit).map(
+      ({ user, ...winner }) => winner
+    );
     const entry = {
       id: createId(),
       cell,
       winners,
+      winnerLimit: state.winnerLimit,
       allowDuplicateWinners: state.allowDuplicateWinners !== false,
       drawnAt: new Date().toISOString()
     };
@@ -595,14 +639,18 @@ async function draw(cell) {
   }
 }
 
-function rankedWinnersForCell(cell, allowDuplicateWinners = state.allowDuplicateWinners !== false) {
+function rankedWinnersForCell(
+  cell,
+  allowDuplicateWinners = state.allowDuplicateWinners !== false,
+  winnerLimit = state.winnerLimit
+) {
   const previousWinnerIds = allowDuplicateWinners ? new Set() : previouslyWonUserIds();
   const users = state.users
     .filter((user) => (user.picks || []).includes(cell))
     .filter((user) => !previousWinnerIds.has(user.id))
     .sort((a, b) => userSelectedAt(a) - userSelectedAt(b) || String(a.name || "").localeCompare(String(b.name || ""), "ko"));
 
-  return rankWinnerUsers(users);
+  return rankWinnerUsers(users).filter((winner) => winner.rank <= winnerLimit);
 }
 
 function rankWinnerUsers(users) {
