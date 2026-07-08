@@ -256,6 +256,24 @@ button:not(.cell):disabled {
   background: #dceaff;
 }
 
+.nav-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 8px 14px;
+  border: 1px solid var(--blue);
+  border-radius: 8px;
+  background: #eaf2ff;
+  color: #1648b8;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.nav-link:hover {
+  background: #dceaff;
+}
+
 .language-switcher {
   display: flex;
   align-items: center;
@@ -1146,6 +1164,12 @@ input {
 
   h1 {
     font-size: 26px;
+  }
+
+  .hub-copy h1 {
+    white-space: normal;
+    word-break: keep-all;
+    font-size: clamp(2.8rem, 14vw, 4.2rem);
   }
 
   .hub-copy h1 {
