@@ -57,6 +57,8 @@ const els = {
   liveImage: $("#liveImage"),
   answerLocked: $("#answerLocked"),
   answerForm: $("#answerForm"),
+  oCount: $("#oCount"),
+  xCount: $("#xCount"),
   nickname: $("#nickname"),
   questionForm: $("#questionForm"),
   questionText: $("#questionText"),
@@ -275,6 +277,7 @@ function renderAll() {
   renderParticipants();
   renderHistory();
   renderChat();
+  renderAnswerCounts();
   renderControls();
 }
 
@@ -378,6 +381,14 @@ function renderParticipants() {
     node.querySelector("button").addEventListener("click", () => blockParticipant(participant));
     els.participantList.appendChild(node);
   });
+}
+
+function renderAnswerCounts() {
+  const entries = Object.values(state.participants).filter((item) => item.questionId === state.currentQuestion?.id);
+  const oCount = entries.filter((item) => item.answer === "O").length;
+  const xCount = entries.filter((item) => item.answer === "X").length;
+  els.oCount.textContent = `${oCount}명 선택`;
+  els.xCount.textContent = `${xCount}명 선택`;
 }
 
 function renderHistory() {

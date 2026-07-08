@@ -345,6 +345,24 @@ select:focus {
   gap: 14px;
 }
 
+.answer-choice {
+  display: grid;
+  gap: 8px;
+}
+
+.answer-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 900;
+}
+
 .ox-button {
   min-height: 150px;
   color: #fff;
