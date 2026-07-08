@@ -57,8 +57,8 @@ const els = {
   liveImage: $("#liveImage"),
   answerLocked: $("#answerLocked"),
   answerForm: $("#answerForm"),
-  oCount: $("#oCount"),
-  xCount: $("#xCount"),
+  oButton: $("#oButton"),
+  xButton: $("#xButton"),
   nickname: $("#nickname"),
   questionForm: $("#questionForm"),
   questionText: $("#questionText"),
@@ -387,8 +387,8 @@ function renderAnswerCounts() {
   const entries = Object.values(state.participants).filter((item) => item.questionId === state.currentQuestion?.id);
   const oCount = entries.filter((item) => item.answer === "O").length;
   const xCount = entries.filter((item) => item.answer === "X").length;
-  els.oCount.textContent = `${oCount}명 선택`;
-  els.xCount.textContent = `${xCount}명 선택`;
+  els.oButton.dataset.count = `${oCount}명 선택`;
+  els.xButton.dataset.count = `${xCount}명 선택`;
 }
 
 function renderHistory() {
