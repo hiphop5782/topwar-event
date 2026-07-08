@@ -95,6 +95,24 @@ button:not(.cell):disabled {
   flex-wrap: wrap;
 }
 
+.nav-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 8px 14px;
+  border: 1px solid var(--blue);
+  border-radius: 8px;
+  background: #eaf2ff;
+  color: #1648b8;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.nav-link:hover {
+  background: #dceaff;
+}
+
 .language-switcher {
   display: flex;
   align-items: center;
