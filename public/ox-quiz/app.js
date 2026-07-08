@@ -64,11 +64,14 @@ const els = {
   questionText: $("#questionText"),
   correctAnswer: $("#correctAnswer"),
   timeLimit: $("#timeLimit"),
+  limitWinners: $("#limitWinners"),
   maxWinners: $("#maxWinners"),
+  resultComment: $("#resultComment"),
   questionImage: $("#questionImage"),
   imagePreviewWrap: $("#imagePreviewWrap"),
   imagePreview: $("#imagePreview"),
   removeImage: $("#removeImage"),
+  publishQuestion: $("#publishQuestion"),
   closeQuestion: $("#closeQuestion"),
   activeState: $("#activeState"),
   adminTimer: $("#adminTimer"),
@@ -138,6 +141,7 @@ function wireEvents() {
     event.preventDefault();
     publishQuestion();
   });
+  els.limitWinners.addEventListener("change", syncWinnerLimitControl);
 
   els.questionImage.addEventListener("change", handleImageSelect);
   els.removeImage.addEventListener("click", clearImage);
@@ -260,6 +264,7 @@ function renderMode() {
   els.adminView.classList.toggle("hidden", state.mode !== "admin" || !state.admin);
   els.clearChat.classList.toggle("hidden", !(state.mode === "admin" && state.admin));
   renderChatShell();
+  syncWinnerLimitControl();
 }
 
 function setChatOpen(open) {
@@ -340,7 +345,14 @@ function renderControls() {
   document.querySelectorAll("#answerForm button").forEach((button) => {
     button.disabled = !ready || !isQuestionActive(state.currentQuestion);
   });
+  els.publishQuestion.disabled = !ready || isQuestionActive(state.currentQuestion);
   els.closeQuestion.disabled = !ready || !state.currentQuestion;
+  syncWinnerLimitControl();
+}
+
+function syncWinnerLimitControl() {
+  els.maxWinners.disabled = !els.limitWinners.checked;
+  els.maxWinners.required = els.limitWinners.checked;
 }
 
 function renderChat() {
@@ -413,10 +425,14 @@ function historyItemHtml(item) {
   const winnerHtml = winners.length
     ? `<div class="winner-list">${winners.map((name) => `<span>${escapeHtml(name)}</span>`).join("")}</div>`
     : `<div class="history-meta">당첨자 없음</div>`;
+  const commentHtml = item.resultComment
+    ? `<div class="history-comment">${escapeHtml(item.resultComment)}</div>`
+    : "";
   return `
     <article class="history-item">
       <strong>${escapeHtml(item.text || "")}</strong>
       <div class="history-meta">정답 ${item.correctAnswer} · 응답 ${item.totalAnswers || 0}명 · ${formatTime(item.createdAt)}</div>
+      ${commentHtml}
       ${winnerHtml}
     </article>
   `;
@@ -460,6 +476,10 @@ async function submitAnswer(answer) {
 
 async function publishQuestion() {
   if (!state.connected) return;
+  if (isQuestionActive(state.currentQuestion)) {
+    els.connectionStatus.textContent = "진행 중인 문제가 마감된 뒤 다음 문제를 출제할 수 있습니다.";
+    return;
+  }
   const id = makeId();
   const seconds = Number(els.timeLimit.value);
   const question = {
@@ -467,7 +487,9 @@ async function publishQuestion() {
     text: els.questionText.value.trim(),
     correctAnswer: els.correctAnswer.value,
     timeLimit: seconds,
-    maxWinners: Number(els.maxWinners.value),
+    limitWinners: els.limitWinners.checked,
+    maxWinners: els.limitWinners.checked ? Number(els.maxWinners.value) : null,
+    resultComment: els.resultComment.value.trim(),
     imageData: state.selectedImage,
     startsAt: Date.now(),
     endsAt: Date.now() + seconds * 1000,
@@ -491,7 +513,9 @@ async function closeCurrentQuestion() {
     const correct = participants
       .filter((item) => item.questionId === state.currentQuestion.id && item.answer === state.currentQuestion.correctAnswer)
       .map((item) => item.nickname);
-    const winners = shuffle(correct).slice(0, state.currentQuestion.maxWinners);
+    const winners = state.currentQuestion.limitWinners
+      ? shuffle(correct).slice(0, state.currentQuestion.maxWinners)
+      : shuffle(correct);
     const record = {
       ...state.currentQuestion,
       closedAt: Date.now(),
@@ -673,7 +697,8 @@ function escapeHtml(value) {
 
 function resultMessage(result) {
   const winners = result.winners?.length ? result.winners.join(", ") : "없음";
-  return `마감되었습니다. 정답은 ${result.correctAnswer}입니다. 당첨자: ${winners}`;
+  const comment = result.resultComment ? `\n${result.resultComment}` : "";
+  return `마감되었습니다. 정답은 ${result.correctAnswer}입니다. 당첨자: ${winners}${comment}`;
 }
 
 function docsToObject(snapshot) {

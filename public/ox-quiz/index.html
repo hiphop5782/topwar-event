@@ -90,13 +90,22 @@
               </label>
               <label>
                 최대 당첨 인원
-                <input id="maxWinners" type="number" min="1" max="500" value="3" required />
+                <input id="maxWinners" type="number" min="1" max="500" value="3" disabled />
               </label>
             </div>
+            <label class="limit-toggle">
+              <input id="limitWinners" type="checkbox" />
+              <span>당첨 인원 제한 적용</span>
+            </label>
+            <label>
+              정답 발표 코멘트
+              <textarea id="resultComment" rows="3" placeholder="예: 이 문제는 헷갈리라고 낸 문제였습니다."></textarea>
+            </label>
             <label>
               참고 이미지
               <input id="questionImage" type="file" accept="image/*" />
             </label>
+            <p class="draft-note">작성 중인 내용은 문제 출제 버튼을 누르기 전까지 참가자 화면에 반영되지 않습니다.</p>
             <div id="imagePreviewWrap" class="image-preview hidden">
               <img id="imagePreview" alt="첨부 이미지 미리보기" />
               <button id="removeImage" class="ghost small" type="button">이미지 제거</button>

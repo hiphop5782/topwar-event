@@ -310,6 +310,27 @@ label {
   font-weight: 700;
 }
 
+.limit-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.limit-toggle input {
+  flex: 0 0 18px;
+  width: 18px;
+  min-height: 18px;
+  accent-color: var(--blue);
+}
+
+.draft-note {
+  margin: -2px 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
 input,
 textarea,
 select {
@@ -442,6 +463,7 @@ select:focus {
   padding: 12px 14px;
   border-radius: 8px;
   font-weight: 700;
+  white-space: pre-line;
 }
 
 .history-list,
@@ -470,6 +492,15 @@ select:focus {
 .participant-item span {
   color: var(--muted);
   font-size: 0.88rem;
+}
+
+.history-comment {
+  border-left: 3px solid var(--blue);
+  padding-left: 10px;
+  color: #344054;
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.45;
 }
 
 .winner-list {
@@ -516,7 +547,7 @@ select:focus {
   display: none !important;
 }
 
-@media (max-width: 1240px) {
+@media (max-width: 1040px) {
   .app-shell {
     width: min(100% - 28px, 1180px);
     margin: 0 auto;
@@ -569,7 +600,7 @@ select:focus {
   }
 }
 
-@media (max-width: 1040px) {
+@media (max-width: 1320px) {
   .view-grid,
   .admin-grid {
     grid-template-columns: 1fr;
