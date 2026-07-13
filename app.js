@@ -1,0 +1,1078 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  initializeFirestore,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+  writeBatch
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { eventId, firebaseConfig } from "./firebase-config.js";
+
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxPImoRLB4zbQgzixoCts_q5_8zQva4QcyvBEXuSeIpl8FRjs8lneLJgXJEuiZEm7Bs/exec";
+const LANGUAGES = [
+  { code: "ko", label: "Korean", flag: "kr" },
+  { code: "en", label: "English", flag: "us" },
+  { code: "vi", label: "Vietnamese", flag: "vn" },
+  { code: "ja", label: "Japanese", flag: "jp" },
+  { code: "es", label: "Spanish", flag: "es" },
+  { code: "pt", label: "Portuguese", flag: "pt" },
+  { code: "ar", label: "Arabic", flag: "sa", dir: "rtl" },
+  { code: "zh-CN", label: "Chinese", flag: "cn" }
+];
+const TRANSLATE_SKIP_SELECTOR = [
+  "[data-no-translate]",
+  "script",
+  "style",
+  ".cell",
+  ".participant strong",
+  ".participant .chip",
+  ".winner-roster-list strong",
+  ".winner-list strong",
+  ".winner-name-list",
+  ".celebration-card em"
+].join(", ");
+
+const params = new URLSearchParams(window.location.search);
+let role = "user";
+
+if (params.has("admin")) {
+  role = window.prompt("관리자 비밀번호를 입력하세요.") === "3223" ? "admin" : "user";
+}
+
+document.body.dataset.role = role;
+
+const elements = {
+  board: document.querySelector("#board"),
+  languageSwitcher: document.querySelector("#languageSwitcher"),
+  toastRoot: document.querySelector("#toastRoot"),
+  roleBadgeText: document.querySelector("#roleBadgeText"),
+  phaseText: document.querySelector("#phaseText"),
+  pickLimitText: document.querySelector("#pickLimitText"),
+  participantCount: document.querySelector("#participantCount"),
+  winnerBanner: document.querySelector("#winnerBanner"),
+  winnerCellText: document.querySelector("#winnerCellText"),
+  winnerNamesText: document.querySelector("#winnerNamesText"),
+  winnerRoster: document.querySelector("#winnerRoster"),
+  winnerRosterSummary: document.querySelector("#winnerRosterSummary"),
+  winnerRosterList: document.querySelector("#winnerRosterList"),
+  nameInput: document.querySelector("#nameInput"),
+  myPickCount: document.querySelector("#myPickCount"),
+  myPickLimit: document.querySelector("#myPickLimit"),
+  myPicks: document.querySelector("#myPicks"),
+  submitPicks: document.querySelector("#submitPicks"),
+  userMessage: document.querySelector("#userMessage"),
+  pickLimitInput: document.querySelector("#pickLimitInput"),
+  winnerLimitInput: document.querySelector("#winnerLimitInput"),
+  allowDuplicateWinnersInput: document.querySelector("#allowDuplicateWinnersInput"),
+  applySettings: document.querySelector("#applySettings"),
+  forbiddenModeToggle: document.querySelector("#forbiddenModeToggle"),
+  openVoting: document.querySelector("#openVoting"),
+  lockVoting: document.querySelector("#lockVoting"),
+  resetPicksOnly: document.querySelector("#resetPicksOnly"),
+  resetWinnerHistory: document.querySelector("#resetWinnerHistory"),
+  resetAll: document.querySelector("#resetAll"),
+  adminMessage: document.querySelector("#adminMessage"),
+  participantsList: document.querySelector("#participantsList"),
+  selectedCellsSummary: document.querySelector("#selectedCellsSummary"),
+  historyList: document.querySelector("#historyList"),
+  historySummary: document.querySelector("#historySummary")
+};
+
+const defaultState = {
+  phase: "ready",
+  picksPerUser: 3,
+  winnerLimit: 1,
+  winnerCell: null,
+  boardImageUrl: "map.png",
+  drawHistory: [],
+  forbiddenCells: [],
+  allowDuplicateWinners: true,
+  resetId: "initial"
+};
+const phaseLabels = {
+  ready: "선택 진행 중",
+  locked: "선택 마감",
+  drawn: "당첨 발표"
+};
+
+let db = null;
+let stateRef = null;
+let usersRef = null;
+let state = { ...defaultState, users: [] };
+let myId = localStorage.getItem("voteUserId") || createId();
+let myPicks = [];
+let forbiddenEditMode = false;
+let firebaseReady = false;
+let hasReceivedState = false;
+let lastCelebratedWinnerKey = null;
+let celebrationTimer = null;
+let currentLanguage = "ko";
+let translateLoading = false;
+let koreanRestoreMap = new Map();
+let staticTranslationItems = [];
+
+localStorage.setItem("voteUserId", myId);
+elements.nameInput.value = localStorage.getItem("voteUserName") || "";
+elements.roleBadgeText.textContent = role === "admin" ? "관리자" : "사용자";
+staticTranslationItems = collectStaticTranslationItems();
+
+function renderLanguageSwitcher() {
+  if (!elements.languageSwitcher) return;
+  elements.languageSwitcher.innerHTML = LANGUAGES.map(
+    (language) => `
+      <button
+        type="button"
+        class="language-button ${language.code === currentLanguage ? "active" : ""}"
+        data-language="${language.code}"
+        aria-label="${language.label}"
+        title="${language.label}"
+      >
+        <img
+          class="flag-icon"
+          src="https://flagcdn.com/w40/${language.flag}.png"
+          srcset="https://flagcdn.com/w80/${language.flag}.png 2x"
+          width="40"
+          height="30"
+          alt=""
+          loading="lazy"
+        />
+      </button>
+    `
+  ).join("");
+}
+
+function shouldSkipTranslateNode(node) {
+  const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+  if (!element || element.closest(TRANSLATE_SKIP_SELECTOR)) return true;
+  const style = window.getComputedStyle(element);
+  if (style.display === "none" || style.visibility === "hidden") return true;
+  const box = element.getBoundingClientRect();
+  return box.width === 0 && box.height === 0;
+}
+
+function isMeaningfulTranslateText(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (/^[\d\s/.,:()\-]+$/.test(text)) return false;
+  if (/^\d+-\d+$/.test(text)) return false;
+  return /[가-힣]/.test(text);
+}
+
+function directTextNode(element) {
+  return [...element.childNodes].find((child) => child.nodeType === Node.TEXT_NODE && child.nodeValue.trim());
+}
+
+function collectStaticTranslationItems() {
+  const textItems = [...document.querySelectorAll("[data-i18n]")]
+    .map((element) => {
+      const node = directTextNode(element);
+      return node ? { type: "text", element, value: node.nodeValue } : null;
+    })
+    .filter((item) => item && isMeaningfulTranslateText(item.value));
+
+  const placeholderItems = [...document.querySelectorAll("[data-i18n-placeholder][placeholder]")]
+    .map((element) => ({ type: "placeholder", element, value: element.getAttribute("placeholder") || "" }))
+    .filter((item) => isMeaningfulTranslateText(item.value));
+
+  return [...textItems, ...placeholderItems];
+}
+
+function rememberKoreanValue(id, value) {
+  if (!koreanRestoreMap.has(id)) koreanRestoreMap.set(id, value);
+}
+
+function getElementPath(element) {
+  if (element.id) return `#${element.id}`;
+  const parts = [];
+  let current = element;
+  while (current && current !== document.body) {
+    const parent = current.parentElement;
+    if (!parent) break;
+    const index = [...parent.children].indexOf(current) + 1;
+    parts.unshift(`${current.tagName.toLowerCase()}:nth-child(${index})`);
+    current = parent;
+  }
+  return parts.join(" > ");
+}
+
+function collectTranslationPayload() {
+  const payload = {};
+  const targets = [];
+  let index = 0;
+
+  staticTranslationItems.forEach((item) => {
+    if (!item.element.isConnected || shouldSkipTranslateNode(item.element)) return;
+    if (item.type === "text") {
+      const node = directTextNode(item.element);
+      if (!node) return;
+      const key = `t${index++}`;
+      const id = `text:${getElementPath(item.element)}:${key}`;
+      payload[key] = item.value.trim();
+      targets.push({ type: "text", key, node, original: item.value });
+      rememberKoreanValue(id, { type: "text", node, value: item.value });
+      return;
+    }
+
+    const input = item.element;
+    if (shouldSkipTranslateNode(input)) return;
+    const key = `p${index++}`;
+    const id = `placeholder:${getElementPath(input)}`;
+    payload[key] = item.value.trim();
+    targets.push({ type: "placeholder", key, node: input, original: item.value });
+    rememberKoreanValue(id, { type: "placeholder", node: input, value: item.value });
+  });
+
+  return { payload, targets };
+}
+
+function normalizeTranslationResult(result) {
+  if (result?.data && typeof result.data === "object") return result.data;
+  if (result?.result && typeof result.result === "object") return result.result;
+  if (result?.translated && typeof result.translated === "object") return result.translated;
+  return result;
+}
+
+function didTranslateChange(result, payload) {
+  return Object.entries(payload).some(([key, value]) => {
+    const translated = result?.[key];
+    return typeof translated === "string" && translated.trim() && translated.trim() !== String(value).trim();
+  });
+}
+
+function setTranslatePlaceholder(targets, enabled) {
+  document.body.classList.toggle("is-translating", enabled);
+  for (const target of targets) {
+    const element = target.type === "text" ? target.node.parentElement : target.node;
+    if (element) element.classList.toggle("translate-placeholder", enabled);
+    if (!enabled) continue;
+    if (target.type === "text") {
+      target.node.nodeValue = placeholderText(target.original.trim());
+    }
+    if (target.type === "placeholder") {
+      target.node.setAttribute("placeholder", "············");
+    }
+  }
+}
+
+function placeholderText(text) {
+  const length = Math.max(4, Math.min(18, text.length));
+  return "█".repeat(length);
+}
+
+function applyTranslatedPayload(result, targets) {
+  for (const target of targets) {
+    const value = result?.[target.key];
+    if (typeof value !== "string" || !value.trim()) continue;
+    if (target.type === "text") target.node.nodeValue = value.trim();
+    if (target.type === "placeholder") target.node.setAttribute("placeholder", value.trim());
+  }
+}
+
+function restoreKoreanText() {
+  for (const item of koreanRestoreMap.values()) {
+    if (!item.node || !item.node.isConnected) continue;
+    if (item.type === "text") item.node.nodeValue = item.value;
+    if (item.type === "placeholder") item.node.setAttribute("placeholder", item.value);
+  }
+  document.documentElement.lang = "ko";
+  document.documentElement.dir = "ltr";
+}
+
+function showToast(message, variant = "error") {
+  if (!elements.toastRoot) return;
+  const toast = document.createElement("div");
+  toast.className = `toast ${variant}`;
+  toast.textContent = message;
+  elements.toastRoot.append(toast);
+  window.setTimeout(() => toast.classList.add("show"), 20);
+  window.setTimeout(() => {
+    toast.classList.remove("show");
+    window.setTimeout(() => toast.remove(), 220);
+  }, 3600);
+}
+
+async function changeLanguage(code) {
+  if (translateLoading || code === currentLanguage) return;
+  const language = LANGUAGES.find((item) => item.code === code);
+  if (!language) return;
+
+  if (currentLanguage !== "ko") restoreKoreanText();
+  currentLanguage = code;
+  renderLanguageSwitcher();
+  document.documentElement.lang = code;
+  document.documentElement.dir = language.dir || "ltr";
+
+  if (code === "ko") {
+    restoreKoreanText();
+    return;
+  }
+
+  const { payload, targets } = collectTranslationPayload();
+  if (!Object.keys(payload).length) {
+    showToast("번역할 한국어 텍스트가 없습니다.", "info");
+    return;
+  }
+
+  translateLoading = true;
+  setTranslatePlaceholder(targets, true);
+
+  try {
+    const response = await fetch(SCRIPT_URL, {
+      method: "POST",
+      body: JSON.stringify({ action: "translate_all", target: code, data: payload })
+    });
+    const rawResult = await response.json();
+    if (rawResult.error) throw new Error(rawResult.error);
+    const result = normalizeTranslationResult(rawResult);
+    if (!didTranslateChange(result, payload)) {
+      throw new Error("번역 서버가 원문과 같은 결과를 반환했습니다.");
+    }
+    applyTranslatedPayload(result, targets);
+  } catch (error) {
+    console.error("Translation failed:", error);
+    restoreKoreanText();
+    currentLanguage = "ko";
+    renderLanguageSwitcher();
+    showToast(error.message || "번역 중 오류가 발생했습니다.");
+  } finally {
+    translateLoading = false;
+    setTranslatePlaceholder(targets, false);
+  }
+}
+
+function createId() {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  const randomPart = Array.from(globalThis.crypto?.getRandomValues?.(new Uint8Array(16)) || [])
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+  return `id-${Date.now().toString(36)}-${randomPart || Math.random().toString(36).slice(2)}`;
+}
+
+function isFirebaseConfigured() {
+  return Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId);
+}
+
+function cellLabel(index) {
+  const row = Math.floor(index / 8) + 1;
+  const col = (index % 8) + 1;
+  return `${row}-${col}`;
+}
+
+function normalizeState(data = {}) {
+  return {
+    ...defaultState,
+    ...data,
+    picksPerUser: Math.max(1, Math.min(64, Number(data.picksPerUser) || defaultState.picksPerUser)),
+    winnerLimit: Math.max(1, Math.min(64, Number(data.winnerLimit) || defaultState.winnerLimit)),
+    drawHistory: Array.isArray(data.drawHistory) ? data.drawHistory : [],
+    forbiddenCells: Array.isArray(data.forbiddenCells) ? data.forbiddenCells : [],
+    allowDuplicateWinners: data.allowDuplicateWinners !== false,
+    resetId: data.resetId || defaultState.resetId,
+    users: state.users
+  };
+}
+
+function buildBoard() {
+  elements.board.innerHTML = "";
+  for (let index = 0; index < 64; index += 1) {
+    const button = document.createElement("button");
+    button.className = "cell";
+    button.type = "button";
+    button.dataset.cell = String(index);
+    button.setAttribute("aria-label", `${cellLabel(index)} 칸`);
+    button.addEventListener("click", () => handleCellClick(index));
+    elements.board.append(button);
+  }
+}
+
+function countByCell() {
+  const counts = new Map();
+  for (const user of state.users) {
+    for (const pick of user.picks || []) counts.set(pick, (counts.get(pick) || 0) + 1);
+  }
+  return counts;
+}
+
+function winningUsers() {
+  if (state.winnerCell === null) return [];
+  const latestEntry = state.drawHistory?.[0];
+  if (latestEntry?.cell === state.winnerCell && Array.isArray(latestEntry.winners)) {
+    const winnerIds = new Set(latestEntry.winners.map((winner) => winner.id));
+    return state.users.filter((user) => winnerIds.has(user.id));
+  }
+  return orderedWinnersForCell(state.winnerCell).map((winner) => winner.user);
+}
+
+function renderBoard() {
+  const counts = countByCell();
+  const usersByCell = usersGroupedByCell();
+  const forbidden = new Set(state.forbiddenCells || []);
+  const boardImageUrl = state.boardImageUrl || "map.png";
+  elements.board.style.backgroundImage = `url("${boardImageUrl}")`;
+  elements.board.classList.add("has-image");
+  elements.board.classList.toggle("forbidden-editing", forbiddenEditMode);
+
+  document.querySelectorAll(".cell").forEach((cell) => {
+    const index = Number(cell.dataset.cell);
+    const count = counts.get(index) || 0;
+    const users = usersByCell.get(index) || [];
+    const isForbidden = forbidden.has(index);
+    cell.classList.toggle("selected", myPicks.includes(index));
+    cell.classList.toggle("has-picks", count > 0);
+    cell.classList.toggle("winner", state.winnerCell === index);
+    cell.classList.toggle("forbidden", isForbidden);
+    cell.dataset.count = count ? String(count) : "";
+    cell.dataset.names = users.length ? users.map((user) => user.name).join(", ") : "";
+    cell.setAttribute("aria-label", `${cellLabel(index)} 칸${users.length ? `, 선택자 ${users.map((user) => user.name).join(", ")}` : ""}`);
+    cell.disabled = role === "user" && (state.phase !== "ready" || isForbidden);
+  });
+}
+
+function usersGroupedByCell() {
+  const groups = new Map();
+  for (const user of state.users) {
+    for (const pick of user.picks || []) {
+      const users = groups.get(pick) || [];
+      users.push(user);
+      groups.set(pick, users);
+    }
+  }
+  return groups;
+}
+
+function renderUserPanel() {
+  elements.pickLimitText.textContent = state.picksPerUser;
+  elements.myPickLimit.textContent = state.picksPerUser;
+  elements.myPickCount.textContent = myPicks.length;
+  elements.myPicks.innerHTML = myPicks.length
+    ? myPicks.map((pick) => `<span class="chip">${cellLabel(pick)}</span>`).join("")
+    : `<span class="chip">선택 없음</span>`;
+  elements.submitPicks.disabled = state.phase !== "ready" || !firebaseReady;
+}
+
+function renderAdminPanel() {
+  if (document.activeElement !== elements.pickLimitInput) {
+    elements.pickLimitInput.value = state.picksPerUser;
+  }
+  if (document.activeElement !== elements.winnerLimitInput) {
+    elements.winnerLimitInput.value = state.winnerLimit;
+  }
+  elements.allowDuplicateWinnersInput.checked = state.allowDuplicateWinners !== false;
+  elements.applySettings.disabled = !firebaseReady;
+  elements.openVoting.disabled = state.phase === "ready" || !firebaseReady;
+  elements.lockVoting.disabled = state.phase !== "ready" || !firebaseReady;
+  elements.resetPicksOnly.disabled = !firebaseReady;
+  elements.resetWinnerHistory.disabled = !firebaseReady || !state.drawHistory.length;
+  elements.resetAll.disabled = !firebaseReady;
+  elements.forbiddenModeToggle.disabled = !firebaseReady;
+  elements.forbiddenModeToggle.classList.toggle("active", forbiddenEditMode);
+  elements.forbiddenModeToggle.textContent = forbiddenEditMode ? "선택 금지 편집 중" : "선택 금지 칸 편집";
+}
+
+function renderParticipants() {
+  const winners = new Set(winningUsers().map((user) => user.id));
+  elements.participantCount.textContent = state.users.length;
+  elements.participantsList.innerHTML = state.users.length
+    ? state.users
+        .map(
+          (user) => `
+            <article class="participant ${winners.has(user.id) ? "winner" : ""}">
+              <strong data-no-translate>${escapeHtml(user.name)}</strong>
+              <div class="chips">
+                ${(user.picks || []).map((pick) => `<span class="chip" data-no-translate>${cellLabel(pick)}</span>`).join("")}
+              </div>
+            </article>
+          `
+        )
+        .join("")
+    : `<p class="message">아직 참여자가 없습니다.</p>`;
+
+  const counts = [...countByCell().entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]);
+  const forbiddenCount = state.forbiddenCells?.length || 0;
+  elements.selectedCellsSummary.textContent = counts.length
+    ? `가장 많이 선택된 칸: ${cellLabel(counts[0][0])} (${counts[0][1]}명), 선택 금지 ${forbiddenCount}칸`
+    : `선택 금지 ${forbiddenCount}칸`;
+}
+
+function renderWinner() {
+  const winners = winningUsers();
+  const hasWinner = state.phase === "drawn" && state.winnerCell !== null;
+  elements.winnerBanner.hidden = !hasWinner;
+  if (!hasWinner) return;
+
+  elements.winnerCellText.textContent = cellLabel(state.winnerCell);
+  const winnerNames = winners.map((user) => user.name).filter(Boolean);
+  elements.winnerNamesText.innerHTML = winnerNames.length
+    ? `당첨자: <span class="winner-name-list" data-no-translate>${escapeHtml(winnerNames.join(", "))}</span>`
+    : "해당 칸을 선택한 사용자가 없습니다.";
+}
+
+function renderWinnerRoster() {
+  const rows = cumulativeWinnerRows();
+  elements.winnerRoster.hidden = !state.drawHistory.length;
+
+  if (!rows.length) {
+    elements.winnerRosterSummary.textContent = state.drawHistory.length
+      ? "누적 당첨 인원이 없습니다."
+      : "아직 당첨 인원이 없습니다.";
+    elements.winnerRosterList.innerHTML = state.drawHistory.length
+      ? `<p class="message">발표된 칸에 당첨자가 없습니다.</p>`
+      : "";
+    return;
+  }
+
+  elements.winnerRosterSummary.textContent = `누적 ${rows.length}명`;
+  elements.winnerRosterList.innerHTML = `
+    <ol class="winner-roster-list">
+      ${rows
+        .map(
+          (row) => `
+            <li>
+              <strong data-no-translate>${escapeHtml(row.name)}</strong>
+              <small>${cellLabel(row.cell)} / ${row.time}</small>
+            </li>
+          `
+        )
+        .join("")}
+    </ol>
+  `;
+}
+
+function cumulativeWinnerRows() {
+  return (state.drawHistory || []).flatMap((entry) => {
+    const time = new Date(entry.drawnAt).toLocaleString("ko-KR", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+    return (entry.winners || [])
+      .filter((winner) => winner?.name)
+      .map((winner) => ({
+        ...winner,
+        cell: entry.cell,
+        time
+      }));
+  });
+}
+
+function historyCard(entry, isLatest = false) {
+  const time = new Date(entry.drawnAt).toLocaleString("ko-KR", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+  const winnerCount = entry.winners?.length || 0;
+
+  return `
+    <article class="history-item ${isLatest ? "latest" : ""}">
+      <strong>${cellLabel(entry.cell)}</strong>
+      <span>${time}</span>
+      <p>당첨 인원 ${winnerCount}명</p>
+    </article>
+  `;
+}
+
+function renderWinnerList(winners) {
+  const namedWinners = winners.filter((winner) => winner?.name);
+
+  return `
+    <ol class="winner-list">
+      ${namedWinners
+        .map(
+          (winner) => `
+            <li>
+              <strong data-no-translate>${escapeHtml(winner.name)}</strong>
+            </li>
+          `
+        )
+        .join("")}
+    </ol>
+  `;
+}
+
+function renderHistory() {
+  const [latest, ...older] = state.drawHistory;
+  elements.historySummary.textContent = state.drawHistory.length
+    ? `총 ${state.drawHistory.length}회 발표`
+    : "아직 발표 기록이 없습니다.";
+
+  if (!latest) {
+    elements.historyList.innerHTML = `<p class="message">관리자가 칸을 발표하면 여기에 기록됩니다.</p>`;
+    return;
+  }
+
+  elements.historyList.innerHTML = `
+    <div class="history-list">
+      ${historyCard(latest, true)}
+    </div>
+    ${
+      older.length
+        ? `
+          <details class="history-archive">
+            <summary>이전 당첨 내역 ${older.length}개 보기</summary>
+            <div class="history-list archive-list">
+              ${older.map((entry) => historyCard(entry)).join("")}
+            </div>
+          </details>
+        `
+        : ""
+    }
+  `;
+}
+
+function render() {
+  elements.phaseText.textContent = phaseLabels[state.phase] || "준비 중";
+  renderBoard();
+  renderUserPanel();
+  renderAdminPanel();
+  renderParticipants();
+  renderWinner();
+  renderWinnerRoster();
+  renderHistory();
+}
+
+function handleCellClick(index) {
+  if (role === "admin") {
+    if (forbiddenEditMode) {
+      toggleForbiddenCell(index);
+      return;
+    }
+    draw(index);
+    return;
+  }
+
+  const forbidden = new Set(state.forbiddenCells || []);
+  if (state.phase !== "ready" || forbidden.has(index)) return;
+  elements.userMessage.textContent = "";
+  elements.userMessage.classList.remove("error");
+
+  if (myPicks.includes(index)) {
+    myPicks = myPicks.filter((pick) => pick !== index);
+  } else if (myPicks.length < state.picksPerUser) {
+    myPicks = [...myPicks, index];
+  } else {
+    elements.userMessage.textContent = `${state.picksPerUser}개까지만 선택할 수 있습니다.`;
+    elements.userMessage.classList.add("error");
+  }
+  render();
+}
+
+async function ensureFirebaseReady() {
+  if (!isFirebaseConfigured()) {
+    const message = "Firebase 설정이 필요합니다. public/firebase-config.js에 Firebase 웹 앱 설정값을 입력해 주세요.";
+    elements.userMessage.textContent = message;
+    elements.userMessage.classList.add("error");
+    elements.adminMessage.textContent = message;
+    elements.adminMessage.classList.add("error");
+    render();
+    return;
+  }
+
+  const app = initializeApp(firebaseConfig);
+  db = initializeFirestore(app, {
+    experimentalAutoDetectLongPolling: true,
+    useFetchStreams: false
+  });
+  stateRef = doc(db, "events", eventId);
+  usersRef = collection(db, "events", eventId, "users");
+  firebaseReady = true;
+
+  const snapshot = await getDoc(stateRef);
+  if (!snapshot.exists()) {
+    await setDoc(stateRef, { ...defaultState, updatedAt: serverTimestamp() });
+  }
+
+  onSnapshot(stateRef, (snapshot) => {
+    const nextState = normalizeState(snapshot.data());
+    maybeCelebrateWinner(nextState);
+    state = nextState;
+    syncResetState();
+    syncMyLocalPicks();
+    render();
+  });
+
+  onSnapshot(usersRef, (snapshot) => {
+    state.users = snapshot.docs
+      .map((item) => ({ id: item.id, ...item.data() }))
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko"));
+    const myRecord = state.users.find((user) => user.id === myId);
+    if (myRecord) {
+      elements.nameInput.value = myRecord.name || elements.nameInput.value;
+      localStorage.setItem("voteUserName", elements.nameInput.value);
+      myPicks = [...(myRecord.picks || [])];
+    }
+    syncMyLocalPicks();
+    render();
+  });
+}
+
+function syncMyLocalPicks() {
+  const forbidden = new Set(state.forbiddenCells || []);
+  myPicks = myPicks.filter((pick) => !forbidden.has(pick)).slice(0, state.picksPerUser);
+}
+
+function maybeCelebrateWinner(nextState) {
+  const latestHistoryId = nextState.drawHistory?.[0]?.id || "no-history";
+  const nextWinnerKey =
+    nextState.phase === "drawn" && nextState.winnerCell !== null
+      ? `${nextState.winnerCell}-${latestHistoryId}`
+      : null;
+
+  if (hasReceivedState && nextWinnerKey && nextWinnerKey !== lastCelebratedWinnerKey) {
+    launchCelebration(cellLabel(nextState.winnerCell), nextState.drawHistory?.[0]?.winners || []);
+  }
+
+  lastCelebratedWinnerKey = nextWinnerKey;
+  hasReceivedState = true;
+}
+
+function launchCelebration(winnerLabel, winners = []) {
+  closeCelebration();
+  const winnerNames = winners.map((winner) => winner.name).filter(Boolean);
+  const hasWinners = winnerNames.length > 0;
+  const winnerText = hasWinners ? winnerNames.join(", ") : "해당 칸을 선택한 사용자가 없습니다.";
+
+  const layer = document.createElement("div");
+  layer.className = `celebration-layer${hasWinners ? "" : " no-winners"}`;
+  layer.innerHTML = `
+    <div class="celebration-card">
+      <button class="celebration-close" type="button" aria-label="알림 닫기">×</button>
+      <span>당첨 발표</span>
+      <strong>${winnerLabel}</strong>
+      <em>${escapeHtml(winnerText)}</em>
+      <p>${hasWinners ? "축하합니다" : "당첨자가 없습니다"}</p>
+    </div>
+  `;
+
+  layer.addEventListener("click", (event) => {
+    if (event.target === layer || event.target.closest(".celebration-close")) {
+      closeCelebration();
+    }
+  });
+
+  if (hasWinners) {
+    const colors = ["#e1192d", "#246bfe", "#ffc83d", "#18845b", "#ffffff"];
+    for (let index = 0; index < 96; index += 1) {
+      const piece = document.createElement("i");
+      piece.className = "confetti-piece";
+      piece.style.left = `${Math.random() * 100}%`;
+      piece.style.setProperty("--confetti-x", `${Math.random() * 220 - 110}px`);
+      piece.style.setProperty("--confetti-rotate", `${Math.random() * 720 - 360}deg`);
+      piece.style.setProperty("--confetti-delay", `${Math.random() * 0.3}s`);
+      piece.style.setProperty("--confetti-duration", `${1.4 + Math.random() * 0.8}s`);
+      piece.style.background = colors[index % colors.length];
+      layer.append(piece);
+    }
+  }
+
+  document.body.append(layer);
+  if (hasWinners) {
+    elements.winnerBanner.classList.add("celebrate");
+  }
+
+  celebrationTimer = setTimeout(closeCelebration, hasWinners ? 2400 : 1800);
+}
+
+function closeCelebration() {
+  if (celebrationTimer) {
+    clearTimeout(celebrationTimer);
+    celebrationTimer = null;
+  }
+  document.querySelector(".celebration-layer")?.remove();
+  elements.winnerBanner.classList.remove("celebrate");
+}
+
+function syncResetState() {
+  const lastResetId = localStorage.getItem("voteResetId");
+  if (state.resetId && lastResetId && state.resetId !== lastResetId) {
+    myPicks = [];
+  }
+  if (state.resetId) {
+    localStorage.setItem("voteResetId", state.resetId);
+  }
+}
+
+async function savePicks() {
+  try {
+    const name = elements.nameInput.value.trim();
+    const forbidden = new Set(state.forbiddenCells || []);
+    if (!name) throw new Error("이름을 입력해 주세요.");
+    if (myPicks.some((pick) => forbidden.has(pick))) throw new Error("선택 금지 칸은 고를 수 없습니다.");
+    if (myPicks.length !== state.picksPerUser) throw new Error(`${state.picksPerUser}개를 선택해 주세요.`);
+
+    localStorage.setItem("voteUserName", name);
+    await setDoc(doc(usersRef, myId), {
+      id: myId,
+      name,
+      picks: myPicks,
+      submittedAt: Date.now(),
+      updatedAt: serverTimestamp()
+    });
+    elements.userMessage.textContent = "선택이 저장되었습니다.";
+    elements.userMessage.classList.remove("error");
+  } catch (error) {
+    elements.userMessage.textContent = error.message;
+    elements.userMessage.classList.add("error");
+  }
+}
+
+async function trimUsersToCurrentRules(nextLimit = state.picksPerUser, forbiddenCells = state.forbiddenCells) {
+  const forbidden = new Set(forbiddenCells || []);
+  const snapshot = await getDocs(usersRef);
+  const batch = writeBatch(db);
+  let changed = false;
+  snapshot.docs.forEach((item) => {
+    const user = item.data();
+    const nextPicks = (user.picks || []).filter((pick) => !forbidden.has(pick)).slice(0, nextLimit);
+    if (JSON.stringify(nextPicks) !== JSON.stringify(user.picks || [])) {
+      batch.set(item.ref, { picks: nextPicks, updatedAt: serverTimestamp() }, { merge: true });
+      changed = true;
+    }
+  });
+  if (changed) await batch.commit();
+}
+
+async function updateSettings(phase = state.phase) {
+  const picksPerUser = Math.max(1, Math.min(64, Number(elements.pickLimitInput.value) || 1));
+  const winnerLimit = Math.max(1, Math.min(64, Number(elements.winnerLimitInput.value) || 1));
+  const allowDuplicateWinners = elements.allowDuplicateWinnersInput.checked;
+  await setDoc(
+    stateRef,
+    {
+      picksPerUser,
+      winnerLimit,
+      allowDuplicateWinners,
+      phase,
+      winnerCell: phase === "drawn" ? state.winnerCell : null,
+      updatedAt: serverTimestamp()
+    },
+    { merge: true }
+  );
+  await trimUsersToCurrentRules(picksPerUser, state.forbiddenCells);
+  elements.adminMessage.textContent = "설정이 모든 화면에 적용되었습니다.";
+  elements.adminMessage.classList.remove("error");
+}
+
+async function toggleForbiddenCell(cell) {
+  try {
+    const current = new Set(state.forbiddenCells || []);
+    if (current.has(cell)) current.delete(cell);
+    else current.add(cell);
+    const forbiddenCells = [...current].sort((a, b) => a - b);
+
+    await setDoc(stateRef, { forbiddenCells, updatedAt: serverTimestamp() }, { merge: true });
+    await trimUsersToCurrentRules(state.picksPerUser, forbiddenCells);
+    elements.adminMessage.textContent = "선택 금지 칸이 갱신되었습니다.";
+    elements.adminMessage.classList.remove("error");
+  } catch (error) {
+    elements.adminMessage.textContent = error.message;
+    elements.adminMessage.classList.add("error");
+  }
+}
+
+async function draw(cell) {
+  try {
+    if ((state.forbiddenCells || []).includes(cell)) {
+      throw new Error("선택 금지 칸은 당첨 칸으로 발표할 수 없습니다.");
+    }
+    if (state.phase === "ready" && !confirm("선택을 마감하고 이 칸을 당첨 칸으로 발표할까요?")) {
+      return;
+    }
+
+    const winners = orderedWinnersForCell(cell, state.allowDuplicateWinners !== false, state.winnerLimit).map(
+      ({ user, ...winner }) => winner
+    );
+    const entry = {
+      id: createId(),
+      cell,
+      winners,
+      winnerLimit: state.winnerLimit,
+      allowDuplicateWinners: state.allowDuplicateWinners !== false,
+      drawnAt: new Date().toISOString()
+    };
+
+    await setDoc(
+      stateRef,
+      {
+        phase: "drawn",
+        winnerCell: cell,
+        drawHistory: [entry, ...(state.drawHistory || [])],
+        updatedAt: serverTimestamp()
+      },
+      { merge: true }
+    );
+  } catch (error) {
+    elements.adminMessage.textContent = error.message;
+    elements.adminMessage.classList.add("error");
+  }
+}
+
+function orderedWinnersForCell(
+  cell,
+  allowDuplicateWinners = state.allowDuplicateWinners !== false,
+  winnerLimit = state.winnerLimit
+) {
+  const previousWinnerIds = allowDuplicateWinners ? new Set() : previouslyWonUserIds();
+  const users = state.users
+    .filter((user) => (user.picks || []).includes(cell))
+    .filter((user) => !previousWinnerIds.has(user.id))
+    .sort((a, b) => userSelectedAt(a) - userSelectedAt(b) || String(a.name || "").localeCompare(String(b.name || ""), "ko"));
+
+  return orderWinnerUsers(users).slice(0, winnerLimit);
+}
+
+function orderWinnerUsers(users) {
+  return users.map((user, index) => {
+    const selectedAt = userSelectedAt(user);
+    return {
+      id: user.id,
+      name: user.name,
+      winningOrder: index + 1,
+      selectedAt,
+      user
+    };
+  });
+}
+
+function previouslyWonUserIds() {
+  const ids = new Set();
+  for (const entry of state.drawHistory || []) {
+    for (const winner of entry.winners || []) {
+      ids.add(winner.id);
+    }
+  }
+  return ids;
+}
+
+function userSelectedAt(user) {
+  if (typeof user.submittedAt === "number") return user.submittedAt;
+  if (typeof user.updatedAt?.toMillis === "function") return user.updatedAt.toMillis();
+  if (typeof user.updatedAt === "number") return user.updatedAt;
+  return 0;
+}
+
+async function resetAll() {
+  const users = await getDocs(usersRef);
+  const batch = writeBatch(db);
+  users.docs.forEach((item) => batch.delete(item.ref));
+  batch.set(stateRef, { ...defaultState, resetId: createId(), updatedAt: serverTimestamp() });
+  await batch.commit();
+}
+
+async function resetPicksOnly() {
+  const users = await getDocs(usersRef);
+  const batch = writeBatch(db);
+  users.docs.forEach((item) => batch.delete(item.ref));
+  batch.set(
+    stateRef,
+    {
+      phase: "ready",
+      winnerCell: null,
+      resetId: createId(),
+      updatedAt: serverTimestamp()
+    },
+    { merge: true }
+  );
+  await batch.commit();
+}
+
+async function resetWinnerHistoryOnly() {
+  await setDoc(
+    stateRef,
+    {
+      phase: "locked",
+      winnerCell: null,
+      drawHistory: [],
+      updatedAt: serverTimestamp()
+    },
+    { merge: true }
+  );
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+elements.nameInput.addEventListener("input", () => {
+  localStorage.setItem("voteUserName", elements.nameInput.value);
+});
+elements.languageSwitcher?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-language]");
+  if (button) changeLanguage(button.dataset.language);
+});
+elements.submitPicks.addEventListener("click", savePicks);
+elements.applySettings.addEventListener("click", async () => {
+  try {
+    await updateSettings();
+  } catch (error) {
+    elements.adminMessage.textContent = error.message;
+    elements.adminMessage.classList.add("error");
+  }
+});
+elements.allowDuplicateWinnersInput.addEventListener("change", async () => {
+  try {
+    await updateSettings();
+  } catch (error) {
+    elements.adminMessage.textContent = error.message;
+    elements.adminMessage.classList.add("error");
+  }
+});
+elements.forbiddenModeToggle.addEventListener("click", () => {
+  forbiddenEditMode = !forbiddenEditMode;
+  elements.adminMessage.textContent = forbiddenEditMode
+    ? "보드에서 선택 금지로 만들 칸을 누르세요."
+    : "관리자는 보드 칸을 눌러 당첨 칸을 발표할 수 있습니다.";
+  render();
+});
+elements.openVoting.addEventListener("click", () => updateSettings("ready"));
+elements.lockVoting.addEventListener("click", () => updateSettings("locked"));
+elements.resetPicksOnly.addEventListener("click", async () => {
+  if (confirm("당첨 내역과 금지 칸은 유지하고 사용자 선택만 초기화할까요?")) {
+    myPicks = [];
+    forbiddenEditMode = false;
+    await resetPicksOnly();
+  }
+});
+elements.resetWinnerHistory.addEventListener("click", async () => {
+  if (confirm("참여자 선택과 선택 금지 칸은 유지하고 당첨 내역만 초기화할까요?")) {
+    forbiddenEditMode = false;
+    await resetWinnerHistoryOnly();
+  }
+});
+elements.resetAll.addEventListener("click", async () => {
+  if (confirm("참여자, 당첨 내역, 선택 금지 칸을 모두 초기화할까요?")) {
+    myPicks = [];
+    forbiddenEditMode = false;
+    await resetAll();
+  }
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    closeCelebration();
+  }
+});
+
+buildBoard();
+renderLanguageSwitcher();
+render();
+ensureFirebaseReady().catch((error) => {
+  const message = `Firebase 연결에 실패했습니다: ${error.message}`;
+  elements.userMessage.textContent = message;
+  elements.userMessage.classList.add("error");
+  elements.adminMessage.textContent = message;
+  elements.adminMessage.classList.add("error");
+  render();
+});

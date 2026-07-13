@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>실시간 OX 퀴즈</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="top-bar">
+        <div>
+          <p class="eyebrow">Firebase Live Quiz</p>
+          <h1>실시간 OX 퀴즈</h1>
+        </div>
+        <div class="mode-switch" role="tablist" aria-label="모드 선택">
+          <a class="home-link" href="../index.html">홈</a>
+          <button class="mode-button active" data-mode="player" type="button">참여</button>
+          <button class="mode-button" data-mode="admin" type="button">관리자</button>
+        </div>
+      </section>
+      <p id="connectionStatus" class="status-pill">실시간 연결 준비 중</p>
+
+      <section id="playerView" class="view-grid">
+        <section class="panel live-card">
+          <div class="question-head">
+            <div>
+              <p class="eyebrow">현재 문제</p>
+              <h2 id="liveQuestion">출제된 문제가 없습니다.</h2>
+            </div>
+            <div id="timerBadge" class="timer-badge">대기</div>
+          </div>
+          <img id="liveImage" class="question-image hidden" alt="문항 참고 이미지" />
+          <div id="answerLocked" class="notice hidden"></div>
+          <form id="answerForm" class="answer-form">
+            <label>
+              닉네임
+              <input id="nickname" type="text" maxlength="20" placeholder="닉네임 입력" autocomplete="nickname" />
+            </label>
+            <div id="answerButtons" class="answer-buttons">
+              <button class="answer-button ox-button o" data-answer="O" data-count="0명 선택" type="submit">O</button>
+              <button class="answer-button ox-button x" data-answer="X" data-count="0명 선택" type="submit">X</button>
+            </div>
+          </form>
+        </section>
+
+        <aside class="panel">
+          <div class="section-title">
+            <h2>최근 기록</h2>
+            <span id="historyCount">0개</span>
+          </div>
+          <div id="playerHistory" class="history-list empty-state">기록이 아직 없습니다.</div>
+        </aside>
+      </section>
+
+      <section id="adminLogin" class="panel admin-login hidden">
+        <h2>관리자 입장</h2>
+        <form id="adminLoginForm" class="inline-form">
+          <input id="adminPassword" type="password" placeholder="비밀번호" autocomplete="current-password" />
+          <button class="primary" type="submit">입장</button>
+        </form>
+        <p id="loginMessage" class="status-text"></p>
+      </section>
+
+      <section id="adminView" class="admin-grid hidden">
+        <section class="panel">
+          <div class="section-title">
+            <h2>문제 출제</h2>
+            <div class="admin-status">
+              <span id="activeState">대기</span>
+              <strong id="adminTimer">대기</strong>
+            </div>
+          </div>
+          <form id="questionForm" class="question-form">
+            <label>
+              질문
+              <textarea id="questionText" rows="4" required placeholder="예: 한글날은 10월 9일이다."></textarea>
+            </label>
+            <div class="form-row">
+              <label>
+                문제 유형
+                <select id="questionType">
+                  <option value="ox">OX</option>
+                  <option value="multiple">객관식</option>
+                </select>
+              </label>
+              <label>
+                정답
+                <select id="correctAnswer">
+                  <option value="O">O</option>
+                  <option value="X">X</option>
+                </select>
+              </label>
+              <label>
+                제한시간(초)
+                <input id="timeLimit" type="number" min="5" max="600" value="30" required />
+              </label>
+            </div>
+            <label id="choicesWrap" class="hidden">
+              보기
+              <textarea id="choicesInput" rows="5" placeholder="한 줄에 보기 하나씩 입력하세요.&#10;예: 1번 보기&#10;2번 보기&#10;3번 보기&#10;4번 보기"></textarea>
+            </label>
+            <div class="form-row compact-row">
+              <label>
+                최대 당첨 인원
+                <input id="maxWinners" type="number" min="1" max="500" value="3" disabled />
+              </label>
+            </div>
+            <label class="limit-toggle">
+              <input id="limitWinners" type="checkbox" />
+              <span>당첨 인원 제한 적용</span>
+            </label>
+            <label>
+              정답 발표 코멘트
+              <textarea id="resultComment" rows="3" placeholder="예: 이 문제는 헷갈리라고 낸 문제였습니다."></textarea>
+            </label>
+            <label>
+              참고 이미지
+              <input id="questionImage" type="file" accept="image/*" />
+            </label>
+            <p class="draft-note">작성 중인 내용은 문제 출제 버튼을 누르기 전까지 참가자 화면에 반영되지 않습니다.</p>
+            <div id="imagePreviewWrap" class="image-preview hidden">
+              <img id="imagePreview" alt="첨부 이미지 미리보기" />
+              <button id="removeImage" class="ghost small" type="button">이미지 제거</button>
+            </div>
+            <div class="form-actions">
+              <button id="publishQuestion" class="primary" type="submit">문제 출제</button>
+              <button id="closeQuestion" class="secondary" type="button">마감 및 기록</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="section-title">
+            <h2>참여자 관리</h2>
+            <span id="participantCount">0명</span>
+          </div>
+          <div id="participantList" class="participant-list empty-state">참여자가 없습니다.</div>
+        </section>
+
+        <section class="panel wide-panel">
+          <div class="section-title">
+            <h2>출제 기록</h2>
+            <div class="record-actions">
+              <button id="exportHistory" class="ghost small" type="button">CSV 다운로드</button>
+              <button id="deleteHistory" class="danger small" type="button">기록 삭제</button>
+            </div>
+          </div>
+          <div id="adminHistory" class="history-list empty-state">기록이 아직 없습니다.</div>
+        </section>
+      </section>
+
+      <section id="chatPanel" class="panel chat-panel">
+        <div class="section-title">
+          <h2>실시간 채팅</h2>
+          <div class="record-actions">
+            <button id="clearChat" class="ghost small" type="button">채팅 비우기</button>
+            <button id="closeChat" class="ghost small chat-close" type="button">닫기</button>
+          </div>
+        </div>
+        <div id="chatMessages" class="chat-messages empty-state">채팅이 아직 없습니다.</div>
+        <form id="chatForm" class="chat-form">
+          <input id="chatInput" type="text" maxlength="120" placeholder="메시지 입력" autocomplete="off" />
+          <button class="primary" type="submit">전송</button>
+        </form>
+      </section>
+      <button id="chatToggle" class="chat-toggle" type="button" aria-controls="chatPanel" aria-expanded="false">
+        채팅
+      </button>
+    </main>
+
+    <template id="participantTemplate">
+      <article class="participant-item">
+        <div>
+          <strong></strong>
+          <span></span>
+        </div>
+        <button class="danger small" type="button">차단</button>
+      </article>
+    </template>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
