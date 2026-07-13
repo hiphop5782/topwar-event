@@ -366,8 +366,15 @@ select:focus {
   gap: 14px;
 }
 
-.ox-button {
+.answer-buttons.multiple {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.answer-button {
   position: relative;
+}
+
+.ox-button {
   min-height: 150px;
   color: #fff;
   font-size: clamp(3rem, 9vw, 6.5rem);
@@ -375,7 +382,24 @@ select:focus {
   border-radius: 8px;
 }
 
-.ox-button::after {
+.choice-button {
+  min-height: 76px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  padding: 14px 16px;
+  text-align: left;
+  line-height: 1.35;
+  word-break: keep-all;
+}
+
+.choice-button:hover,
+.choice-button:focus-visible {
+  border-color: var(--blue);
+  background: #eef4ff;
+}
+
+.answer-button::after {
   content: attr(data-count);
   position: absolute;
   left: 50%;
@@ -395,8 +419,8 @@ select:focus {
   transition: opacity 120ms ease, transform 120ms ease;
 }
 
-.ox-button:hover::after,
-.ox-button:focus-visible::after {
+.answer-button:hover::after,
+.answer-button:focus-visible::after {
   opacity: 1;
   transform: translate(-50%, 0);
 }
@@ -453,6 +477,10 @@ select:focus {
   display: grid;
   grid-template-columns: 0.7fr 1fr 1fr;
   gap: 12px;
+}
+
+.compact-row {
+  grid-template-columns: minmax(180px, 240px);
 }
 
 .notice {

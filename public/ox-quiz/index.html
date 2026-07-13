@@ -37,9 +37,9 @@
               닉네임
               <input id="nickname" type="text" maxlength="20" placeholder="닉네임 입력" autocomplete="nickname" />
             </label>
-            <div class="answer-buttons">
-              <button id="oButton" class="ox-button o" data-answer="O" data-count="0명 선택" type="submit">O</button>
-              <button id="xButton" class="ox-button x" data-answer="X" data-count="0명 선택" type="submit">X</button>
+            <div id="answerButtons" class="answer-buttons">
+              <button class="answer-button ox-button o" data-answer="O" data-count="0명 선택" type="submit">O</button>
+              <button class="answer-button ox-button x" data-answer="X" data-count="0명 선택" type="submit">X</button>
             </div>
           </form>
         </section>
@@ -78,6 +78,13 @@
             </label>
             <div class="form-row">
               <label>
+                문제 유형
+                <select id="questionType">
+                  <option value="ox">OX</option>
+                  <option value="multiple">객관식</option>
+                </select>
+              </label>
+              <label>
                 정답
                 <select id="correctAnswer">
                   <option value="O">O</option>
@@ -88,6 +95,12 @@
                 제한시간(초)
                 <input id="timeLimit" type="number" min="5" max="600" value="30" required />
               </label>
+            </div>
+            <label id="choicesWrap" class="hidden">
+              보기
+              <textarea id="choicesInput" rows="5" placeholder="한 줄에 보기 하나씩 입력하세요.&#10;예: 1번 보기&#10;2번 보기&#10;3번 보기&#10;4번 보기"></textarea>
+            </label>
+            <div class="form-row compact-row">
               <label>
                 최대 당첨 인원
                 <input id="maxWinners" type="number" min="1" max="500" value="3" disabled />

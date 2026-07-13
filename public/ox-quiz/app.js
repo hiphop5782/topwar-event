@@ -57,12 +57,14 @@ const els = {
   liveImage: $("#liveImage"),
   answerLocked: $("#answerLocked"),
   answerForm: $("#answerForm"),
-  oButton: $("#oButton"),
-  xButton: $("#xButton"),
+  answerButtons: $("#answerButtons"),
   nickname: $("#nickname"),
   questionForm: $("#questionForm"),
   questionText: $("#questionText"),
+  questionType: $("#questionType"),
   correctAnswer: $("#correctAnswer"),
+  choicesWrap: $("#choicesWrap"),
+  choicesInput: $("#choicesInput"),
   timeLimit: $("#timeLimit"),
   limitWinners: $("#limitWinners"),
   maxWinners: $("#maxWinners"),
@@ -141,6 +143,8 @@ function wireEvents() {
     event.preventDefault();
     publishQuestion();
   });
+  els.questionType.addEventListener("change", syncQuestionTypeControls);
+  els.choicesInput.addEventListener("input", syncQuestionTypeControls);
   els.limitWinners.addEventListener("change", syncWinnerLimitControl);
 
   els.questionImage.addEventListener("change", handleImageSelect);
@@ -264,6 +268,7 @@ function renderMode() {
   els.adminView.classList.toggle("hidden", state.mode !== "admin" || !state.admin);
   els.clearChat.classList.toggle("hidden", !(state.mode === "admin" && state.admin));
   renderChatShell();
+  syncQuestionTypeControls();
   syncWinnerLimitControl();
 }
 
@@ -295,6 +300,7 @@ function renderQuestion() {
   const imageData = question?.imageData || result?.imageData;
   els.liveImage.classList.toggle("hidden", !imageData);
   if (imageData) els.liveImage.src = imageData;
+  renderAnswerButtons(question);
 
   clearInterval(state.ticking);
   updateTimer();
@@ -310,6 +316,19 @@ function renderQuestion() {
   } else if (blocked) {
     els.answerLocked.textContent = "관리자에 의해 참여가 제한된 닉네임입니다.";
   }
+}
+
+function renderAnswerButtons(question) {
+  const choices = getQuestionChoices(question);
+  els.answerButtons.classList.toggle("multiple", question?.type === "multiple");
+  els.answerButtons.innerHTML = choices.map((choice) => {
+    const isO = choice === "O";
+    const isX = choice === "X";
+    const classes = ["answer-button", isO || isX ? "ox-button" : "choice-button", isO ? "o" : "", isX ? "x" : ""]
+      .filter(Boolean)
+      .join(" ");
+    return `<button class="${classes}" data-answer="${escapeHtml(choice)}" data-count="0명 선택" type="submit">${escapeHtml(choice)}</button>`;
+  }).join("");
 }
 
 function updateTimer() {
@@ -348,6 +367,15 @@ function renderControls() {
   els.publishQuestion.disabled = !ready || isQuestionActive(state.currentQuestion);
   els.closeQuestion.disabled = !ready || !state.currentQuestion;
   syncWinnerLimitControl();
+}
+
+function syncQuestionTypeControls() {
+  const isMultiple = els.questionType.value === "multiple";
+  els.choicesWrap.classList.toggle("hidden", !isMultiple);
+  const choices = isMultiple ? parseChoices(els.choicesInput.value) : ["O", "X"];
+  const previous = els.correctAnswer.value;
+  els.correctAnswer.innerHTML = choices.map((choice) => `<option value="${escapeHtml(choice)}">${escapeHtml(choice)}</option>`).join("");
+  if (choices.includes(previous)) els.correctAnswer.value = previous;
 }
 
 function syncWinnerLimitControl() {
@@ -396,11 +424,13 @@ function renderParticipants() {
 }
 
 function renderAnswerCounts() {
-  const entries = Object.values(state.participants).filter((item) => item.questionId === state.currentQuestion?.id);
-  const oCount = entries.filter((item) => item.answer === "O").length;
-  const xCount = entries.filter((item) => item.answer === "X").length;
-  els.oButton.dataset.count = `${oCount}명 선택`;
-  els.xButton.dataset.count = `${xCount}명 선택`;
+  const question = state.currentQuestion;
+  const entries = Object.values(state.participants).filter((item) => item.questionId === question?.id);
+  getQuestionChoices(question).forEach((choice) => {
+    const count = entries.filter((item) => item.answer === choice).length;
+    const button = [...els.answerButtons.querySelectorAll("[data-answer]")].find((item) => item.dataset.answer === choice);
+    if (button) button.dataset.count = `${count}명 선택`;
+  });
 }
 
 function renderHistory() {
@@ -482,9 +512,17 @@ async function publishQuestion() {
   }
   const id = makeId();
   const seconds = Number(els.timeLimit.value);
+  const type = els.questionType.value;
+  const choices = type === "multiple" ? parseChoices(els.choicesInput.value) : ["O", "X"];
+  if (type === "multiple" && choices.length < 2) {
+    els.connectionStatus.textContent = "객관식은 보기를 2개 이상 입력해야 합니다.";
+    return;
+  }
   const question = {
     id,
+    type,
     text: els.questionText.value.trim(),
+    choices,
     correctAnswer: els.correctAnswer.value,
     timeLimit: seconds,
     limitWinners: els.limitWinners.checked,
@@ -699,6 +737,21 @@ function resultMessage(result) {
   const winners = result.winners?.length ? result.winners.join(", ") : "없음";
   const comment = result.resultComment ? `\n${result.resultComment}` : "";
   return `마감되었습니다. 정답은 ${result.correctAnswer}입니다. 당첨자: ${winners}${comment}`;
+}
+
+function getQuestionChoices(question) {
+  if (question?.type === "multiple" && Array.isArray(question.choices) && question.choices.length) {
+    return question.choices;
+  }
+  return ["O", "X"];
+}
+
+function parseChoices(value) {
+  return String(value || "")
+    .split(/\r?\n/)
+    .map((choice) => choice.trim())
+    .filter(Boolean)
+    .slice(0, 8);
 }
 
 function docsToObject(snapshot) {
